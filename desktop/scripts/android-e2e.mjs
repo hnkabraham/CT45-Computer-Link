@@ -1,8 +1,7 @@
-// Runs the Android app on an emulator (or a USB-connected device) against the desktop server
+// Runs the Android app on a disposable emulator against the desktop server
 // code, sending scans the way the CT45's scanner does. Build the APK first:
 //   (cd ../android && ./gradlew assembleDebug) && npm run android-e2e
-// The emulator reaches this computer at 10.0.2.2. On a real device set HOST to this
-// computer's LAN address. SCREENSHOT_DIR=/some/dir keeps screenshots.
+// Set ANDROID_SERIAL to the disposable emulator. It reaches this computer at 10.0.2.2. SCREENSHOT_DIR=/some/dir keeps screenshots.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -10,6 +9,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import https from 'node:https';
+import { X509Certificate } from 'node:crypto';
+import { createIdentity, fingerprint } from '../src/identity.js';
 import { newToken, pairingUrl } from '../src/protocol.js';
 import { CLOSE_REPAIRED, startServer } from '../src/server.js';
 
@@ -20,6 +22,10 @@ const PKG = 'com.henokabraham.ct45tracker';
 const HOST = process.env.HOST ?? '10.0.2.2';
 const PORT = 18766;
 const shots = process.env.SCREENSHOT_DIR;
+if (shots) fs.mkdirSync(shots, { recursive: true });
+if (!process.env.ANDROID_SERIAL?.startsWith('emulator-')) throw new Error('Select a disposable emulator with ANDROID_SERIAL; this test clears app data and changes lock settings.');
+const identity = await createIdentity();
+const security = { computerId: identity.id, fingerprint: fingerprint(new X509Certificate(identity.cert).raw) };
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -75,25 +81,27 @@ let server;
 async function startDesktop() {
   server = await startServer({
     port: PORT,
+    identity,
     portAttempts: 1,
     getToken: () => token,
     computerName: () => 'Test Mac',
     onScan: (s) => received.push(s),
   });
 }
-const link = () => pairingUrl({ hosts: [HOST], port: PORT, token, name: 'Test Mac' });
+const link = () => pairingUrl({ ...security, hosts: [HOST], port: PORT, token, name: 'Test Mac' });
 
 // A computer that misbehaves on purpose. 'silent': accepts the connection and never answers a
 // scan, like a laptop whose Wi-Fi died without closing anything. 'reject': refuses every scan.
 async function startFakeDesktop(port, mode) {
-  const wss = new WebSocketServer({ port });
-  await new Promise((r) => wss.once('listening', r));
-  const fake = { connections: 0, scans: [], wss, link: pairingUrl({ hosts: [HOST], port, token: 'fake-token', name: 'Fake Mac' }) };
+  const http = https.createServer({ key: identity.key, cert: identity.cert });
+  const wss = new WebSocketServer({ server: http });
+  await new Promise((r) => http.listen(port, r));
+  const fake = { connections: 0, scans: [], wss, link: pairingUrl({ ...security, hosts: [HOST], port, token: 'fake-token', name: 'Fake Mac' }) };
   wss.on('connection', (ws) => {
     fake.connections++;
     ws.on('message', (raw) => {
       const m = JSON.parse(raw);
-      if (m.type === 'hello') ws.send(JSON.stringify({ type: 'welcome', name: 'Fake Mac', version: 1 }));
+      if (m.type === 'hello') ws.send(JSON.stringify({ type: 'welcome', name: 'Fake Mac', version: 2, session: { id: 'default', name: 'General' } }));
       if (m.type === 'scan') {
         fake.scans.push(m.data);
         if (mode === 'reject') ws.send(JSON.stringify({ type: 'error', code: 'bad-message', message: 'no', id: m.id }));
@@ -102,7 +110,7 @@ async function startFakeDesktop(port, mode) {
   });
   fake.close = () => new Promise((r) => {
     for (const c of wss.clients) c.terminate();
-    wss.close(r);
+    wss.close(() => http.close(r));
   });
   return fake;
 }
@@ -133,7 +141,7 @@ try {
   check('scan reaches the computer', await until(() => received.some((s) => s.data === '0123456789012')));
   const first = received.find((s) => s.data === '0123456789012');
   check('barcode type travels with it', first?.aimId === ']E0' && first?.codeId === 'd');
-  check('scan marked sent on the device', await until(() => screen().text('last_scan_meta')?.endsWith('Sent')));
+  check('scan marked sent on the device', await until(() => screen().text('last_scan_meta')?.includes(' · Sent ·')));
   scan('Box 7 / "fragile" & more', { aimId: ']Q1', codeId: 's' });
   check('spaces and symbols survive', await until(() => received.some((s) => s.data === 'Box 7 / "fragile" & more')));
 
@@ -152,7 +160,7 @@ try {
   check('notices the computer is gone', await until(() => /^(Can't reach|Connecting to) Test Mac/.test(screen().text('status_title') ?? '')));
   scan('OFFLINE-1');
   await until(() => screen().text('last_scan') === 'OFFLINE-1');
-  check('queued scan shown as waiting', screen().text('last_scan_meta')?.endsWith('Waiting'));
+  check('queued scan shown as waiting', screen().text('last_scan_meta')?.includes(' · Waiting ·'));
   screenshot('ct45-android-waiting.png');
   shell('am', 'force-stop', PKG);
   launchApp();
@@ -176,7 +184,7 @@ try {
 
   // USB fallback: an address that doesn't answer, then 127.0.0.1 forwarded over adb.
   adb('reverse', `tcp:${PORT}`, `tcp:${PORT}`);
-  scan(pairingUrl({ hosts: ['192.0.2.1', '127.0.0.1'], port: PORT, token, name: 'Test Mac' }), { aimId: ']Q1', codeId: 's' });
+  scan(pairingUrl({ ...security, hosts: ['192.0.2.1', '127.0.0.1'], port: PORT, token, name: 'Test Mac' }), { aimId: ']Q1', codeId: 's' });
   check('falls back to the next address in the pairing code', await until(() => server.devices()[0]?.address === '127.0.0.1', 30_000));
   scan('VIA-USB');
   check('scans flow over USB', await until(() => received.some((s) => s.data === 'VIA-USB')));
@@ -203,7 +211,7 @@ try {
   scan(rejecting.link, { aimId: ']Q1', codeId: 's' });
   await until(() => screen().text('status_title') === 'Connected to Fake Mac');
   scan('REJECT-ME');
-  check('a refused scan is marked Rejected', await until(() => screen().text('last_scan_meta')?.endsWith('Rejected')));
+  check('a refused scan is marked Rejected', await until(() => screen().text('last_scan_meta')?.includes(' · Rejected ·')));
   await sleep(12_000);
   check('and is not sent again', rejecting.scans.filter((d) => d === 'REJECT-ME').length === 1 && rejecting.connections === 1, `${rejecting.scans.length} sends, ${rejecting.connections} connections`);
   await rejecting.close();
@@ -244,7 +252,7 @@ try {
   scan('BG-OTHER-APP');
   check('scan with another app in front reaches the computer', await arrives('BG-OTHER-APP'));
 
-  // Another app sends a pairing code while CT45 Tracker is in the background: ignored.
+  // Another app sends a pairing code while CT45 Computer Link is in the background: ignored.
   const rogue = await startFakeDesktop(PORT + 4, 'silent');
   scan(rogue.link, { aimId: ']Q1', codeId: 's' });
   await sleep(4000);

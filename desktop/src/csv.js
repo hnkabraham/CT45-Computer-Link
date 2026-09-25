@@ -19,9 +19,9 @@ export function csvField(value) {
 // Oldest first, which is how people read a log in a spreadsheet. The BOM and CRLF make Excel
 // on Windows open it as UTF-8 with proper rows.
 export function toCsv(scans) {
-  const rows = [['Scanned at', 'Barcode', 'Type', 'Device']];
+  const rows = [['Scanned at', 'Barcode', 'Type', 'Device', 'Session']];
   for (const s of [...scans].sort((a, b) => a.scannedAt - b.scannedAt)) {
-    rows.push([localTimestamp(s.scannedAt), s.data, symbologyName(s), s.device]);
+    rows.push([localTimestamp(s.scannedAt), s.data, symbologyName(s), s.device, s.sessionName || 'General']);
   }
   return `﻿${rows.map((r) => r.map(csvField).join(',')).join('\r\n')}\r\n`;
 }

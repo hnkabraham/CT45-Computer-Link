@@ -3,7 +3,7 @@
 const MAX_ROWS = 500;
 const $ = (id) => document.getElementById(id);
 
-const state = { scans: [], devices: [], pairing: null, settings: {}, typingSupported: true };
+const state = { scans: [], devices: [], pairing: null, settings: {}, sessions: { items: [], activeId: 'default' }, typingSupported: true };
 let newestId = null;
 let toastTimer;
 
@@ -84,18 +84,20 @@ function renderSettings() {
 
 function filteredScans() {
   const q = $('search').value.trim().toLowerCase();
-  return q ? state.scans.filter((s) => s.data.toLowerCase().includes(q) || (s.symbology || '').toLowerCase().includes(q)) : state.scans;
+  const id = $('view-session').value;
+  return state.scans.filter((s) => (!id || (s.sessionId || 'default') === id) && (!q || s.data.toLowerCase().includes(q) || (s.symbology || '').toLowerCase().includes(q)));
 }
 
 function renderScans() {
-  const total = state.scans.length;
+  const viewId = $('view-session').value;
+  const total = state.scans.filter((s) => !viewId || (s.sessionId || 'default') === viewId).length;
   const list = filteredScans();
   const q = $('search').value.trim();
   $('count').textContent = q ? `${plural(list.length, 'match', 'matches')} of ${plural(total, 'scan')}` : plural(total, 'scan');
   $('count').hidden = total === 0;
   $('empty').hidden = total > 0;
   $('table').hidden = list.length === 0;
-  for (const id of ['copy-all', 'export', 'clear']) $(id).disabled = total === 0;
+  for (const id of ['copy-all', 'export', 'export-csv', 'clear']) $(id).disabled = total === 0;
 
   const shown = list.slice(0, MAX_ROWS);
   $('rows').replaceChildren(
@@ -107,6 +109,7 @@ function renderScans() {
         el('td', { className: 'data', textContent: visible(s.data) }),
         el('td', { className: 'kind', textContent: s.symbology || '—' }),
         el('td', { className: 'device', textContent: s.device }),
+        el('td', { className: 'session', textContent: s.sessionName || 'General' }),
       );
       row.dataset.id = s.id;
       if (s.id === newestId) row.classList.add('new');
@@ -114,10 +117,20 @@ function renderScans() {
     }),
   );
   $('truncated').hidden = list.length <= MAX_ROWS;
-  $('truncated').textContent = `Showing the newest ${MAX_ROWS.toLocaleString()}. Search to find older scans, or export them all to CSV.`;
+  $('truncated').textContent = `Showing the newest ${MAX_ROWS.toLocaleString()}. Search to find older scans, or export the current view.`;
+}
+
+function renderSessions() {
+  const view = $('view-session').value;
+  const options = () => state.sessions.items.map((s) => el('option', { value: s.id, textContent: s.name }));
+  $('active-session').replaceChildren(...options());
+  $('active-session').value = state.sessions.activeId;
+  $('view-session').replaceChildren(el('option', { value: '', textContent: 'All sessions' }), ...options());
+  $('view-session').value = state.sessions.items.some((s) => s.id === view) ? view : '';
 }
 
 function render() {
+  renderSessions();
   renderConnection();
   renderPairing();
   renderSettings();
@@ -128,6 +141,8 @@ async function saveSettings(patch) {
   state.settings = await window.ct45.setSettings(patch);
   renderSettings();
 }
+
+window.ct45.on('sessions', (sessions) => { state.sessions = sessions; renderSessions(); renderScans(); });
 
 // Events from the main process
 window.ct45.on('scan', (scan) => {
@@ -150,7 +165,7 @@ window.ct45.on('typing', (result) => {
   status.hidden = false;
   $('permission').hidden = result.reason !== 'permission';
   if (result.ok) status.textContent = `Typed ${visible(result.data)}`;
-  else if (result.reason === 'focused') status.textContent = 'Not typed: CT45 Tracker was the active window. Click into the app you want scans typed into.';
+  else if (result.reason === 'focused') status.textContent = 'Not typed: CT45 Computer Link was the active window. Click into the app you want scans typed into.';
   else if (result.reason === 'delayed') status.textContent = `Not typed: ${visible(result.data)} was scanned while the CT45 was disconnected. It's in the list.`;
   else if (result.reason === 'permission') status.textContent = `Not typed: ${visible(result.data)}`;
   else status.textContent = `Couldn't type the scan: ${result.message}`;
@@ -173,22 +188,50 @@ $('copy-all').addEventListener('click', async () => {
   toast(`Copied ${plural(list.length, 'scan')}, newest first`);
 });
 
-$('export').addEventListener('click', async () => {
-  const result = await window.ct45.exportCsv();
-  if (!result.canceled) toast(`Exported ${plural(result.count, 'scan')}`);
+async function exportScans(format) {
+  try {
+    const result = await window.ct45.exportScans({ format, sessionId: $('view-session').value, query: $('search').value });
+    if (!result.canceled) toast(`Exported ${plural(result.count, 'scan')}`);
+  } catch { toast('Could not save the export. Try another location.'); }
+}
+$('export').addEventListener('click', () => exportScans('xlsx'));
+$('export-csv').addEventListener('click', () => exportScans('csv'));
+$('view-session').addEventListener('change', () => { $('clear-confirm').hidden = true; renderScans(); });
+$('active-session').addEventListener('change', async (e) => {
+  try { state.sessions = await window.ct45.activateSession(e.target.value); renderSessions(); }
+  catch { renderSessions(); toast('Could not save the active session.'); }
+});
+$('new-session').addEventListener('click', () => { $('session-form').hidden = false; $('session-name').focus(); });
+$('session-cancel').addEventListener('click', () => { $('session-form').hidden = true; });
+$('session-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('session-name').value.trim();
+  if (!name) return;
+  try {
+    state.sessions = await window.ct45.createSession(name);
+    renderSessions();
+    $('view-session').value = state.sessions.activeId;
+    $('search').value = '';
+    $('session-form').hidden = true;
+    $('session-name').value = '';
+    renderScans();
+    toast(`Started ${name}`);
+  } catch { toast('Could not save the new session. Check available disk space.'); }
 });
 
 $('clear').addEventListener('click', () => {
-  $('clear-question').textContent = `Clear all ${plural(state.scans.length, 'scan')}? Export first if you need them.`;
+  $('clear-question').textContent = `Clear scans from ${$('view-session').selectedOptions[0].textContent}? This includes search results and hidden matches. Export first if you need them.`;
   $('clear-confirm').hidden = false;
   $('clear-no').focus();
 });
 $('clear-no').addEventListener('click', () => ($('clear-confirm').hidden = true));
 $('clear-yes').addEventListener('click', async () => {
-  state.scans = await window.ct45.clearScans();
-  $('clear-confirm').hidden = true;
-  renderScans();
-  toast('Scans cleared');
+  try {
+    state.scans = await window.ct45.clearScans($('view-session').value);
+    $('clear-confirm').hidden = true;
+    renderScans();
+    toast('Scans cleared');
+  } catch { toast('Could not clear scans. Check available disk space.'); }
 });
 
 $('copy-link').addEventListener('click', async () => {

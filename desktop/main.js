@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
+import { loadIdentity } from './src/identity.js';
+import { advertiseComputer } from './src/discovery.js';
+import { Sessions, selectScans } from './src/sessions.js';
+import { toExcel } from './src/excel.js';
 import { toCsv, localTimestamp } from './src/csv.js';
 import { computerName, lanAddresses } from './src/network.js';
 import { newToken, pairingUrl } from './src/protocol.js';
@@ -16,13 +20,17 @@ const DEFAULT_PORT = 8765;
 const NETWORK_CHECK_MS = 10_000;
 
 // Lets the end-to-end test run against a throwaway profile and port.
-if (process.env.CT45_USER_DATA) app.setPath('userData', process.env.CT45_USER_DATA);
+const legacyData = ['CT45 Tracker', 'ct45-tracker'].map((name) => path.join(app.getPath('appData'), name));
+app.setPath('userData', process.env.CT45_USER_DATA || legacyData.find((dir) => fs.existsSync(dir)) || legacyData[0]);
 
 let win;
 let server;
 let store;
 let settings;
 let pairing;
+let identity;
+let discovery;
+let sessions;
 const type = createTyper();
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
@@ -45,15 +53,16 @@ function loadSettings() {
 }
 
 function saveSettings(s) {
-  fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
-  fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2));
+  fs.mkdirSync(path.dirname(settingsFile()), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(`${settingsFile()}.tmp`, JSON.stringify(s, null, 2), { mode: 0o600 });
+  fs.renameSync(`${settingsFile()}.tmp`, settingsFile());
 }
 
 async function buildPairing() {
   const hosts = lanAddresses();
   // 127.0.0.1 last: over a USB cable with `adb reverse`, the CT45 reaches us there when Wi-Fi
   // won't carry device-to-device traffic.
-  const url = pairingUrl({ hosts: [...hosts, '127.0.0.1'], port: server.port, token: settings.token, name: computerName() });
+  const url = pairingUrl({ hosts: [...hosts, '127.0.0.1'], port: server.port, token: settings.token, name: computerName(), computerId: identity.id, fingerprint: identity.fingerprint });
   const qr = await QRCode.toDataURL(url, { margin: 1, width: 480, errorCorrectionLevel: 'M' });
   return { url, qr, hosts, port: server.port, name: computerName() };
 }
@@ -63,6 +72,7 @@ async function refreshPairing() {
   const hosts = lanAddresses();
   if (pairing && hosts.join() === pairing.hosts.join()) return;
   pairing = await buildPairing();
+  discovery?.refresh();
   send('pairing', pairing);
 }
 
@@ -75,6 +85,10 @@ function publicSettings() {
 }
 
 async function handleScan(msg) {
+  if (store.has(msg.id)) return;
+  const previous = sessions.state;
+  const session = sessions.resolve(msg);
+  if (previous !== sessions.state) send('sessions', sessions.state);
   const scan = {
     id: msg.id,
     data: msg.data,
@@ -85,6 +99,8 @@ async function handleScan(msg) {
     codeId: msg.codeId,
     symbology: symbologyName(msg),
     device: msg.device,
+    sessionId: session.id,
+    sessionName: session.name,
   };
   if (!store.add(scan)) return; // a resend of something we already have
   send('scan', scan);
@@ -117,7 +133,7 @@ function createWindow() {
     height: 720,
     minWidth: 420,
     minHeight: 480,
-    title: 'CT45 Tracker',
+    title: 'CT45 Computer Link',
     backgroundColor: '#f5f6f8',
     show: false,
     webPreferences: {
@@ -138,6 +154,7 @@ function createWindow() {
 function registerIpc() {
   ipcMain.handle('get-state', () => ({
     scans: store.list(),
+    sessions: sessions.state,
     devices: server.devices(),
     pairing,
     settings: publicSettings(),
@@ -154,21 +171,36 @@ function registerIpc() {
 
   ipcMain.handle('copy', (_e, text) => clipboard.writeText(String(text)));
 
-  ipcMain.handle('export-csv', async () => {
+  ipcMain.handle('create-session', (_e, name) => {
+    sessions.create(name);
+    server.sessionChanged();
+    send('sessions', sessions.state);
+    return sessions.state;
+  });
+  ipcMain.handle('activate-session', (_e, id) => {
+    sessions.activate(id);
+    server.sessionChanged();
+    send('sessions', sessions.state);
+    return sessions.state;
+  });
+
+  ipcMain.handle('export-scans', async (_e, options = {}) => {
+    const format = options.format === 'csv' ? 'csv' : 'xlsx';
+    const scans = selectScans(store.list(), options);
     const stamp = localTimestamp(Date.now()).replace(/[: ]/g, '-').slice(0, 16);
     const { canceled, filePath } = await dialog.showSaveDialog(win, {
       title: 'Export scans',
-      defaultPath: path.join(app.getPath('documents'), `CT45 scans ${stamp}.csv`),
-      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      defaultPath: path.join(app.getPath('documents'), `CT45 scans ${stamp}.${format}`),
+      filters: [{ name: format === 'csv' ? 'CSV' : 'Excel workbook', extensions: [format] }],
     });
     if (canceled || !filePath) return { canceled: true };
-    fs.writeFileSync(filePath, toCsv(store.list()));
-    return { path: filePath, count: store.list().length };
+    fs.writeFileSync(filePath, format === 'csv' ? toCsv(scans) : await toExcel(scans));
+    return { path: filePath, count: scans.length };
   });
 
   // Returns what's left, so the window can't drop a scan that raced the clear.
-  ipcMain.handle('clear-scans', () => {
-    store.clear();
+  ipcMain.handle('clear-scans', (_e, sessionId) => {
+    store.clear(sessionId);
     return store.list();
   });
 
@@ -199,18 +231,22 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
-    settings = loadSettings();
-    store = new ScanStore(path.join(app.getPath('userData'), 'scans.jsonl')).load();
     try {
+      settings = loadSettings();
+      store = new ScanStore(path.join(app.getPath('userData'), 'scans.jsonl')).load();
+      sessions = new Sessions(path.join(app.getPath('userData'), 'sessions.json'));
+      identity = await loadIdentity(path.join(app.getPath('userData'), 'identity.json'));
       server = await startServer({
         port: settings.port,
+        identity,
+        getSession: () => sessions.active,
         getToken: () => settings.token,
         computerName,
         onScan: handleScan,
         onDevicesChanged: (devices) => send('devices', devices),
       });
     } catch (e) {
-      dialog.showErrorBox('CT45 Tracker', `Couldn't start listening for scanners: ${e.message}`);
+      dialog.showErrorBox('CT45 Computer Link', `Couldn't start listening for scanners: ${e.message}`);
       app.quit();
       return;
     }
@@ -220,6 +256,7 @@ if (!app.requestSingleInstanceLock()) {
       saveSettings(settings);
     }
     pairing = await buildPairing();
+    discovery = advertiseComputer(identity, server.port, (e) => console.warn('Local discovery unavailable:', e.message));
     registerIpc();
     createWindow();
     setInterval(() => refreshPairing().catch(() => {}), NETWORK_CHECK_MS);
@@ -227,5 +264,5 @@ if (!app.requestSingleInstanceLock()) {
 
   // The window is the app: closing it stops listening for scanners, on every platform.
   app.on('window-all-closed', () => app.quit());
-  app.on('will-quit', () => server?.close());
+  app.on('will-quit', () => { discovery?.stop(); server?.close(); });
 }

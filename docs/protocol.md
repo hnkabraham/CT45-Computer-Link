@@ -1,75 +1,77 @@
-# CT45 ↔ computer protocol
+# CT45 ↔ computer protocol, version 2
 
-The CT45 app connects to the desktop app over a WebSocket on the local network. The desktop app
-listens on port 8765, or the next free port up to 8774. Everything is JSON text frames.
-`desktop/src/protocol.js` and `android/.../Protocol.kt` implement the two sides.
+JSON text frames over **TLS WebSockets (`wss://`)**, TLS 1.2 or later. The desktop listens on TCP 8765, trying up to nine subsequent ports if occupied. Plain WebSocket connections are rejected. Protocol 1 pairing codes require a one-time re-pair after upgrading both apps.
 
-## Pairing
+## Pairing and identity
 
-The desktop app shows a QR code holding a link:
+The QR code contains a URL-encoded link:
 
-```
-ct45tracker://pair?h=192.168.1.20,10.0.0.5,127.0.0.1&p=8765&t=Xk3...&n=Henoks+MacBook
+```text
+ct45tracker://pair?v=2&h=192.168.1.20,127.0.0.1&p=8765&t=<token>&n=<computer-name>&id=<computer-uuid>&fp=<sha256-hex>
 ```
 
-| Param | Meaning |
+| Parameter | Meaning |
 |---|---|
-| `h` | Addresses to try, in order: this computer's LAN addresses, then `127.0.0.1` for a USB cable with `adb reverse` |
-| `p` | Port |
-| `t` | Pairing token, 16 random characters. **New pairing code** in the desktop app replaces it and disconnects every scanner |
-| `n` | Computer name, shown on the CT45 before it connects |
+| `v` | Protocol version, exactly `2` |
+| `h` | Initial addresses, including loopback for `adb reverse` |
+| `p` | Initial TCP port |
+| `t` | Random 96-bit pairing token, base64url encoded |
+| `n` | Display name |
+| `id` | Stable public computer ID, at most 64 alphanumeric/hyphen characters |
+| `fp` | Exact leaf certificate SHA-256 fingerprint, 64 lowercase hex characters |
 
-The CT45 treats any scan that starts with `ct45tracker://pair?` as a pairing code rather than a
-barcode. It stores the link and connects. It remembers which address worked and tries that one
-first next time.
+The desktop generates an ECDSA P-256 self-signed certificate and private key on first run. `identity.json` persists that identity independently of IP addresses, device names, sessions, and token rotation. Its file is created with mode 0600 on systems that support POSIX modes. A corrupt identity stops startup instead of silently replacing the trust anchor. The certificate lasts ten years; replacement requires scanning a new QR.
+
+The Android TLS trust manager verifies the leaf's validity period and pinned digest before any token or barcode is sent. Its hostname verifier checks the same certificate pin: trust is in the paired identity, not an IP address or a public CA. No plaintext fallback exists. `New pairing code` changes the token and disconnects clients; it does not change the certificate.
+
+Pairing codes are consumed only while the Android activity is visible. Invalid links leave an existing valid pairing unchanged. Legacy saved links are discarded during migration, while saved scans are retained.
+
+## Discovery and reconnection
+
+The desktop publishes `_ct45link._tcp` using mDNS/DNS-SD. Its service name is `ct45-<computer-id>`, with TXT entries `id=<computer-id>` and `v=2`, and the current listening port. It republishes when network interfaces change. No token, barcode, or private key is advertised.
+
+Android uses `NsdManager` while disconnected. It matches the service name and TXT ID, resolves a candidate address and port, and then performs the **same pinned TLS handshake**. A forged discovery record cannot change the trusted identity. The successfully authenticated endpoint is cached only after welcome. QR addresses and USB loopback remain fallbacks. Discovery stops once connected and retries periodically when unavailable.
+
+After a connection failure, retry backoff grows to 15 seconds. Each failed address gets at most a four-second connection attempt and an eight-second pairing-response window. A pending scan with no reply for ten seconds causes reconnection. Otherwise the 60-second WebSocket heartbeat detects silent failures. Discovery is local-subnet only and depends on multicast being allowed.
 
 ## Messages
 
-CT45 → computer:
+Android → desktop:
 
 ```json
-{"type":"hello","token":"Xk3...","device":"CT45 1A2B","app":"1.0"}
-{"type":"scan","id":"<uuid>","data":"0123456789012","scannedAt":1790000000000,"sentAt":1790000000150,"aimId":"]E0","codeId":"d"}
+{"type":"hello","token":"...","device":"CT45 1A2B","app":"2.0.0"}
+{"type":"scan","id":"<uuid>","data":"0000123456789","scannedAt":1790000000000,"sentAt":1790000000150,"aimId":"]C0","codeId":"j","sessionId":"<uuid>","sessionName":"Morning count"}
 ```
 
-`hello` must be the first message, within 5 seconds. `aimId` is the standard AIM symbology
-identifier and `codeId` is Honeywell's own code ID; both may be empty (for typed entries).
-`sentAt` is when this copy was sent, by the CT45's clock. If it's more than 60 seconds after
-`scannedAt`, the scan waited in the outbox, and the desktop doesn't type it into other apps.
-Comparing two times from the same clock means the device and computer clocks needn't agree.
+The first message must be `hello`, within five seconds. A barcode is at most 8192 characters, its ID at most 64, AIM/code IDs at most 8, and device name at most 100. WebSocket payloads are capped at 64 KiB. Scan timestamps must be finite numbers. Unknown fields are ignored.
 
-Computer → CT45:
+Desktop → Android:
 
 ```json
-{"type":"welcome","name":"Henoks MacBook","version":1}
-{"type":"ack","id":"<uuid>"}
-{"type":"error","code":"bad-token|bad-message|not-paired|save-failed","message":"...","id":"<scan id, when there is one>"}
+{"type":"welcome","name":"Computer","version":2,"session":{"id":"<uuid>","name":"Morning count"}}
+{"type":"session","session":{"id":"<uuid>","name":"Afternoon count"}}
+{"type":"ack","id":"<scan-uuid>"}
+{"type":"error","code":"bad-token|bad-message|not-paired|save-failed","message":"...","id":"<scan-id-if-known>"}
 ```
 
-- `bad-message` with an `id`: the computer will never accept that scan. The CT45 marks it
-  **Rejected** and stops sending it.
-- `save-failed`: the computer couldn't store it. The CT45 offers it again after 5 seconds.
+Session IDs are at most 64 characters; names at most 80. The scanner persists the current session and copies it into each scan at capture time. A later session change never retags the outbox. Missing session data in pre-v2 history maps to `{id:"default",name:"General"}`. The desktop recovers unknown session IDs with their supplied names, for example after restoring a backup or moving a scanner to another computer.
 
-## Delivery
+## Delivery and storage
 
-The CT45 keeps every scan in an outbox, saved to disk, until it gets the `ack` for that scan's
-`id`. On every (re)connect it sends everything still in the outbox, oldest first. The computer
-ignores an `id` it already has, so a resend after a lost ack can't create a duplicate.
+Android saves each scan before sending it. Failed local writes stay visible as **Not saved**, retry every five seconds, and are withheld from the network until saved. The outbox survives process restarts. Acknowledgements remove entries from the outbox; the device retains 100 completed scans for its recent history.
+
+The desktop appends scans to JSONL before acknowledging them, deduplicating by ID. Failed writes return `save-failed`; Android retries after five seconds. `bad-message` with a scan ID marks the entry **Rejected** and stops resending it. Damaged trailing JSONL records are separated from future records during recovery. This is crash recovery, not a guarantee against storage hardware failure or loss of an unsaved scan.
+
+Clearing a session rewrites the remaining records atomically and keeps tombstones for the latest 10,000 cleared IDs so lost acknowledgements do not bring cleared scans back. Existing session definitions remain available. Desktop session changes are saved atomically before being broadcast to authenticated clients.
+
+A scan whose `sentAt - scannedAt` exceeds 60 seconds is stored but not typed into another app. Comparing timestamps from the scanner's own clock avoids requiring synchronized device clocks.
 
 ## Close codes
 
-| Code | Meaning | CT45 does |
+| Code | Meaning | Android action |
 |---|---|---|
-| 4001 | Wrong token | Stops retrying; shows "Pairing code changed" |
-| 4002 | No `hello` in time | Retries |
-| 4003 | Computer made a new pairing code | Same as 4001 |
+| 4001 | Wrong token | Stop retrying and request re-pairing |
+| 4002 | No hello | Retry |
+| 4003 | Pairing token revoked | Stop retrying and request re-pairing |
 
-Both sides ping every 60 seconds, to save the CT45's battery. The computer drops a scanner
-that misses a pong, so one that silently leaves Wi-Fi range stays listed for up to two minutes.
-The CT45 also reconnects if its oldest unanswered scan gets no reply within 10 seconds, so a
-dead connection is noticed as soon as it matters. The 10 seconds restart only when the computer
-answers, not with each new scan, so steady scanning can't hide a dead connection. The computer
-handles each scanner's messages one at a time, in order. When the
-connection drops it retries by itself. An address that doesn't answer is skipped to the next
-one straight away. After each round through all the addresses it waits longer, up to 15
-seconds. Bringing the app to the front retries at once.
+The certificate and token protect transport and pairing. Local scan files and exported spreadsheets are not additionally encrypted at rest.

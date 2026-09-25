@@ -1,3 +1,4 @@
+import https from 'node:https';
 import { WebSocketServer } from 'ws';
 import { PROTOCOL_VERSION, parseClientMessage, tokensMatch } from './protocol.js';
 
@@ -16,6 +17,8 @@ export const CLOSE_REPAIRED = 4003;
 // copy of an app may be holding it; the pairing QR code always shows the port actually used.
 export async function startServer({
   port,
+  identity,
+  getSession = () => ({ id: 'default', name: 'General' }),
   getToken,
   computerName,
   onScan,
@@ -24,12 +27,14 @@ export async function startServer({
   pingEveryMs = PING_EVERY_MS,
   portAttempts = 10,
 }) {
+  if (!identity?.key || !identity?.cert) throw new Error('TLS identity is required');
   let wss;
+  let http;
   let boundPort;
   for (let p = port; p < port + portAttempts; p++) {
     try {
-      wss = await listen(p);
-      boundPort = p;
+      ({ wss, http } = await listen(p, identity));
+      boundPort = http.address().port;
       break;
     } catch (e) {
       if (e.code !== 'EADDRINUSE' || p === port + portAttempts - 1) throw e;
@@ -69,7 +74,7 @@ export async function startServer({
           return ws.close(CLOSE_BAD_TOKEN, 'bad token');
         }
         devices.set(ws, { device: msg.device, address, since: Date.now() });
-        send({ type: 'welcome', name: computerName(), version: PROTOCOL_VERSION });
+        send({ type: 'welcome', name: computerName(), version: PROTOCOL_VERSION, session: getSession() });
         return changed();
       }
 
@@ -104,6 +109,9 @@ export async function startServer({
   return {
     port: boundPort,
     devices: deviceList,
+    sessionChanged() {
+      for (const ws of devices.keys()) if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'session', session: getSession() }));
+    },
     // After a new pairing code, scanners holding the old one must re-pair.
     disconnectAll(code = CLOSE_REPAIRED, reason = 'pairing code changed') {
       for (const ws of devices.keys()) ws.close(code, reason);
@@ -111,15 +119,17 @@ export async function startServer({
     close: () =>
       new Promise((resolve) => {
         for (const ws of wss.clients) ws.terminate();
-        wss.close(() => resolve());
+        wss.close(() => http.close(() => resolve()));
       }),
   };
 }
 
-function listen(port) {
+function listen(port, identity) {
   return new Promise((resolve, reject) => {
-    const wss = new WebSocketServer({ port, maxPayload: 64 * 1024 });
-    wss.once('listening', () => resolve(wss));
-    wss.once('error', reject);
+    const http = https.createServer({ key: identity.key, cert: identity.cert, minVersion: 'TLSv1.2' }, (_req, res) => { res.writeHead(404); res.end(); });
+    const wss = new WebSocketServer({ server: http, maxPayload: 64 * 1024 });
+    wss.on('error', () => {}); // HTTP bind errors also propagate through ws.
+    http.once('error', (e) => { wss.close(); reject(e); });
+    http.listen(port, () => resolve({ wss, http }));
   });
 }

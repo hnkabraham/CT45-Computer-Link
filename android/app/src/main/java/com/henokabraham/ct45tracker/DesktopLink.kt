@@ -1,6 +1,10 @@
 package com.henokabraham.ct45tracker
 
 import android.content.SharedPreferences
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import com.henokabraham.ct45tracker.ComputerDiscovery.Endpoint
 import android.os.Handler
 import android.os.Looper
 import okhttp3.OkHttpClient
@@ -17,6 +21,7 @@ import java.util.concurrent.TimeUnit
  * posted there.
  */
 class DesktopLink(
+    context: Context,
     private val prefs: SharedPreferences,
     private val log: ScanLog,
     private val deviceName: String,
@@ -43,15 +48,39 @@ class DesktopLink(
         // spare the battery in background mode; unanswered scans are caught sooner below.
         .pingInterval(60, TimeUnit.SECONDS)
         .build()
+    private var secureClient: OkHttpClient? = null
+    var session = Protocol.Session(prefs.getString("sessionId", "default")!!, prefs.getString("sessionName", "General")!!)
+        private set
+    private var discovered: Endpoint? = null
+    private var preferred: Endpoint? = pairing?.let { p ->
+        prefs.getString(KEY_LAST_HOST, null)?.let { host ->
+            val port = prefs.getInt("lastPort", p.port)
+            try { Protocol.serverUrl(host, port); Endpoint(host, port) } catch (_: IllegalArgumentException) { null }
+        }
+    }
+    private val discovery = ComputerDiscovery(context) { endpoint ->
+        if (status !is Status.Connected && status !is Status.PairingExpired && endpoint != discovered) {
+            discovered = endpoint
+            hostIndex = 0
+            connect()
+        }
+    }
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) { main.post {
+            if (status is Status.Retrying) { discovery.stop(); pairing?.let { discovery.start(it.computerId) }; nudge() }
+        } }
+    }
     private val listeners = mutableListOf<() -> Unit>()
 
     private var socket: WebSocket? = null
     private var generation = 0 // callbacks from a replaced socket are ignored
-    private var hostIndex = preferredHostIndex()
+    private var hostIndex = 0
     private var failures = 0
     private var welcomed = false
     private var started = false
     private val retry = Runnable { connect() }
+    private val welcomeOverdue = Runnable { disconnect(); lost("No pairing reply from the computer") }
     // No reply to a scan in time means the connection is dead even if nothing has noticed yet:
     // reconnect, and the outbox sends it again. The clock starts at the oldest unanswered scan
     // and restarts only when the computer answers, so steady scanning can't keep pushing it
@@ -76,6 +105,7 @@ class DesktopLink(
         if (started) return
         started = true
         log.addListener { flush() }
+        try { connectivity.registerDefaultNetworkCallback(networkCallback) } catch (_: RuntimeException) {}
         connect()
     }
 
@@ -89,6 +119,11 @@ class DesktopLink(
 
     fun pair(candidate: Protocol.Pairing): Boolean {
         val p = Protocol.validatedPairing(candidate) ?: return false
+        discovery.stop()
+        discovered = null
+        preferred = null
+        secureClient = null
+        if (pairing?.computerId != p.computerId) updateSession(Protocol.Session())
         pairing = p
         prefs.edit()
             .putString(KEY_PAIRING, pairingToText(p))
@@ -102,6 +137,11 @@ class DesktopLink(
 
     fun unpair() {
         pairing = null
+        discovery.stop()
+        discovered = null
+        preferred = null
+        secureClient = null
+        updateSession(Protocol.Session())
         prefs.edit().remove(KEY_PAIRING).remove(KEY_LAST_HOST).apply()
         disconnect()
         setStatus(Status.NotPaired)
@@ -110,24 +150,29 @@ class DesktopLink(
     private fun connect() {
         disconnect()
         val p = pairing ?: return setStatus(Status.NotPaired)
-        val host = p.hosts[hostIndex % p.hosts.size]
+        discovery.start(p.computerId)
+        val endpoints = endpoints(p)
+        val endpoint = endpoints[hostIndex % endpoints.size]
+        val host = endpoint.host
         val gen = ++generation
         welcomed = false
         inFlight.clear()
         setStatus(Status.Connecting(host))
         val request = try {
-            Request.Builder().url(Protocol.serverUrl(host, p.port)).build()
+            Request.Builder().url(Protocol.serverUrl(host, endpoint.port)).build()
         } catch (e: IllegalArgumentException) {
             // Also recover from a bad saved address without trapping the app in a crash loop.
             unpair()
             return
         }
-        socket = client.newWebSocket(request, object : WebSocketListener() {
+        val tls = secureClient ?: PinnedTls.client(client, p.fingerprint).also { secureClient = it }
+        main.postDelayed(welcomeOverdue, 8_000)
+        socket = tls.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) = onMain(gen) {
                 webSocket.send(Protocol.hello(p.token, deviceName, BuildConfig.VERSION_NAME))
             }
 
-            override fun onMessage(webSocket: WebSocket, text: String) = onMain(gen) { handle(Protocol.parseServer(text), host) }
+            override fun onMessage(webSocket: WebSocket, text: String) = onMain(gen) { handle(Protocol.parseServer(text), endpoint) }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(1000, null)
@@ -138,6 +183,7 @@ class DesktopLink(
                     // Nothing will retry until the user scans the new code, including the
                     // no-reply timer for scans that were on their way.
                     disconnect()
+                    discovery.stop()
                     setStatus(Status.PairingExpired)
                 } else {
                     lost("Connection closed")
@@ -150,15 +196,20 @@ class DesktopLink(
         })
     }
 
-    private fun handle(msg: Protocol.ServerMessage, host: String) {
+    private fun handle(msg: Protocol.ServerMessage, endpoint: Endpoint) {
         when (msg) {
             is Protocol.ServerMessage.Welcome -> {
+                main.removeCallbacks(welcomeOverdue)
                 welcomed = true
                 failures = 0
-                prefs.edit().putString(KEY_LAST_HOST, host).apply()
+                preferred = endpoint
+                discovery.stop()
+                prefs.edit().putString(KEY_LAST_HOST, endpoint.host).putInt("lastPort", endpoint.port).apply()
+                updateSession(msg.session)
                 setStatus(Status.Connected(msg.name.ifEmpty { pairing?.name.orEmpty() }))
                 flush()
             }
+            is Protocol.ServerMessage.SessionChanged -> { updateSession(msg.session); setStatus(status) }
             is Protocol.ServerMessage.Ack -> {
                 answered(msg.id)
                 log.markSent(msg.id)
@@ -210,13 +261,14 @@ class DesktopLink(
     }
 
     private fun lost(reason: String) {
-        socket = null
+        disconnect()
         if (pairing == null) return setStatus(Status.NotPaired)
         // An address that never answered: try the next one from the QR code right away.
         val neverConnected = !welcomed
         failures++
         if (neverConnected) hostIndex++
-        val tried = pairing!!.hosts.size
+        val tried = endpoints(pairing!!).size
+        discovery.start(pairing!!.computerId)
         val delay = if (neverConnected && failures % tried != 0) 0L else backoff(failures / tried)
         setStatus(Status.Retrying(reason))
         main.postDelayed(retry, delay)
@@ -226,6 +278,7 @@ class DesktopLink(
 
     private fun disconnect() {
         main.removeCallbacks(retry)
+        main.removeCallbacks(welcomeOverdue)
         main.removeCallbacks(resend)
         stopAckTimer()
         inFlight.clear()
@@ -243,9 +296,11 @@ class DesktopLink(
         listeners.toList().forEach { it() }
     }
 
-    private fun preferredHostIndex(): Int {
-        val last = prefs.getString(KEY_LAST_HOST, null) ?: return 0
-        return pairing?.hosts?.indexOf(last)?.coerceAtLeast(0) ?: 0
+    private fun endpoints(p: Protocol.Pairing) = (listOfNotNull(discovered, preferred) + p.hosts.map { Endpoint(it, p.port) }).distinct()
+
+    private fun updateSession(next: Protocol.Session) {
+        session = next
+        prefs.edit().putString("sessionId", next.id).putString("sessionName", next.name).apply()
     }
 
     private fun loadPairing(): Protocol.Pairing? {
@@ -264,7 +319,7 @@ class DesktopLink(
         // Stored in the same form as the QR code so there's one parser.
         fun pairingToText(p: Protocol.Pairing): String {
             fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
-            return "${Protocol.PAIR_PREFIX}?h=${enc(p.hosts.joinToString(","))}&p=${p.port}&t=${enc(p.token)}&n=${enc(p.name)}"
+            return "${Protocol.PAIR_PREFIX}?v=2&id=${enc(p.computerId)}&fp=${p.fingerprint}&h=${enc(p.hosts.joinToString(","))}&p=${p.port}&t=${enc(p.token)}&n=${enc(p.name)}"
         }
     }
 }

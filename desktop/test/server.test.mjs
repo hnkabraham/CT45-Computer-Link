@@ -4,6 +4,8 @@ import net from 'node:net';
 import WebSocket from 'ws';
 import { CLOSE_BAD_TOKEN, CLOSE_NO_HELLO, CLOSE_REPAIRED, startServer } from '../src/server.js';
 
+import { createIdentity } from '../src/identity.js';
+const identity = await createIdentity();
 const PORT = 28765;
 
 async function withServer(opts, fn) {
@@ -11,6 +13,7 @@ async function withServer(opts, fn) {
   const deviceEvents = [];
   const server = await startServer({
     port: PORT,
+    identity,
     getToken: () => 'secret',
     computerName: () => 'Test Mac',
     onScan: (s) => scans.push(s),
@@ -26,7 +29,7 @@ async function withServer(opts, fn) {
 
 // A minimal stand-in for the CT45 app: collects every message and the close code.
 function connect(port) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const ws = new WebSocket(`wss://127.0.0.1:${port}`, { ca: identity.cert, checkServerIdentity: () => undefined });
   const inbox = [];
   const waiters = [];
   ws.on('message', (m) => {
@@ -58,7 +61,7 @@ test('a scanner with the right token is welcomed and its scans are acknowledged'
     const c = connect(server.port);
     await c.opened;
     c.send({ type: 'hello', token: 'secret', device: 'CT45 #1' });
-    assert.deepEqual(await c.next(), { type: 'welcome', name: 'Test Mac', version: 1 });
+    assert.deepEqual(await c.next(), { type: 'welcome', name: 'Test Mac', version: 2, session: { id: 'default', name: 'General' } });
     assert.equal(server.devices()[0].device, 'CT45 #1');
 
     c.send({ type: 'scan', id: 'u1', data: '0123456789012', scannedAt: 1000, codeId: 'd' });

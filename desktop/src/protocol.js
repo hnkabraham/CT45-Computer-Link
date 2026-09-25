@@ -3,7 +3,7 @@
 
 import crypto from 'node:crypto';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const PAIR_PREFIX = 'ct45tracker://pair';
 export const MAX_DATA_LENGTH = 8192;
 
@@ -18,8 +18,8 @@ export function tokensMatch(expected, given) {
 }
 
 // The QR code the CT45 scans to pair. Kept short so the code stays easy to scan from a screen.
-export function pairingUrl({ hosts, port, token, name }) {
-  const q = new URLSearchParams({ h: hosts.join(','), p: String(port), t: token });
+export function pairingUrl({ hosts, port, token, name, computerId, fingerprint }) {
+  const q = new URLSearchParams({ v: '2', h: hosts.join(','), p: String(port), t: token, id: computerId, fp: fingerprint });
   if (name) q.set('n', name);
   return `${PAIR_PREFIX}?${q}`;
 }
@@ -31,7 +31,10 @@ export function parsePairingUrl(text) {
   const port = Number(q.get('p'));
   const token = q.get('t');
   if (!hosts.length || !Number.isInteger(port) || port < 1 || port > 65535 || !token) return null;
-  return { hosts, port, token, name: q.get('n') ?? '' };
+  const computerId = q.get('id');
+  const fingerprint = q.get('fp');
+  if (q.get('v') !== '2' || !/^[a-zA-Z0-9-]{1,64}$/.test(computerId || '') || !/^[a-f0-9]{64}$/.test(fingerprint || '')) return null;
+  return { hosts, port, token, name: q.get('n') ?? '', computerId, fingerprint };
 }
 
 const isShortString = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
@@ -65,6 +68,7 @@ function checkMessage(m) {
       if (!Number.isFinite(m.scannedAt)) return { ok: false, error: 'scan needs scannedAt' };
       if (!optionalString(m.aimId, 8) || !optionalString(m.codeId, 8)) return { ok: false, error: 'bad symbology' };
       if (m.sentAt !== undefined && !Number.isFinite(m.sentAt)) return { ok: false, error: 'bad sentAt' };
+      if (!optionalString(m.sessionId, 64) || !optionalString(m.sessionName, 80)) return { ok: false, error: 'bad session' };
       return {
         ok: true,
         msg: {
@@ -76,6 +80,8 @@ function checkMessage(m) {
           sentAt: m.sentAt ?? null,
           aimId: m.aimId || '',
           codeId: m.codeId || '',
+          sessionId: m.sessionId || '',
+          sessionName: m.sessionName || '',
         },
       };
     default:

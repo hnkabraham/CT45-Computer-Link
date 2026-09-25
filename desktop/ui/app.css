@@ -285,3 +285,17 @@ details:not([open]) > summary::after { transform: rotate(-90deg); }
   .scans tr.new td { animation: none; }
   * { transition: none !important; }
 }
+
+.session-bar, .session-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.session-bar { margin-bottom: 8px; }
+.session-bar label { font-weight: 600; }
+.session-bar select { flex: 1; min-width: 120px; }
+select, #session-name { font: inherit; color: inherit; background: var(--surface, Canvas); border: 1px solid var(--border, #ccc); border-radius: 7px; padding: 8px; max-width: 100%; }
+.session-form { margin: 14px 0; padding: 12px; border: 1px solid var(--border, #ccc); border-radius: 9px; }
+#session-name { flex: 1; min-width: 180px; }
+.session-hint { margin: 0 0 20px; }
+.view-label { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 12px; }
+.secure-note { font-size: 12px; color: var(--muted); text-align: center; }
+.session { font-size: 12px; overflow-wrap: anywhere; }
+.toolbar { flex-wrap: wrap; }
+[hidden] { display: none !important; }

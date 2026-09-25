@@ -168,6 +168,7 @@ class MainActivity : Activity() {
         statusDot.backgroundTintList = ColorStateList.valueOf(getColor(color))
         statusTitle.text = title
         statusDetail.text = if (link.status is DesktopLink.Status.Connected || waitingText.isEmpty()) detail else "$detail $waitingText"
+        statusDetail.append("\n" + getString(R.string.current_session, link.session.name))
         unpair.visibility = if (link.pairing != null) View.VISIBLE else View.GONE
         storageWarning.visibility = if (app.log.hasSaveError) View.VISIBLE else View.GONE
 
@@ -181,7 +182,7 @@ class MainActivity : Activity() {
             lastScan.text = visible(latest.scan.data)
             lastScan.setTextColor(getColor(R.color.text))
             lastScan.textSize = 26f
-            lastScanMeta.text = getString(R.string.scan_meta, time(latest.scan.scannedAt), getString(stateText(latest)))
+            lastScanMeta.text = getString(R.string.scan_meta, time(latest.scan.scannedAt), getString(stateText(latest)), latest.scan.sessionName)
         }
         adapter.notifyDataSetChanged()
     }

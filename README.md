@@ -1,186 +1,124 @@
 # CT45 Computer Link
 
-Scan barcodes with a Honeywell CT45 and see them on your computer, live. The desktop app (macOS
-and Windows) keeps a timestamped list you can search, copy and export to CSV. It can also type
-each scan into whatever app you're using, like a keyboard scanner plugged into the computer.
+Scan a barcode on a Honeywell CT45 and send it to your Mac or Windows computer. Keep a searchable scan log, organize work into named sessions, export to Excel, or type each scan into another app.
 
-The Android and desktop apps currently appear as **CT45 Tracker** when installed.
+**[Download v2.0.0 — desktop installers and Android APK](https://github.com/hnkabraham/CT45-Computer-Link/releases/tag/v2.0.0)**
 
-**[Download the Android APK](https://github.com/hnkabraham/CT45-Computer-Link/releases/latest)**
-from GitHub Releases. The current APK is a debug build for sideloading; the desktop app can
-be run from source or built using the commands below.
+![Named scanning session on the desktop](docs/images/desktop.png)
 
+- **Pair once:** scan the computer’s QR code with the CT45.
+- **Encrypted connections:** the QR code pins the computer’s TLS certificate. Scans and pairing credentials travel over an encrypted connection.
+- **Automatic reconnection:** local network discovery finds the paired computer after its IP address or listening port changes.
+- **Offline scans saved and retried:** scans saved on the CT45 wait for the computer to return. Resends are deduplicated.
+- **Excel export:** barcodes are text cells, preserving leading zeros, long identifiers, GS1 separators, and values that resemble formulas. CSV is also available.
+- **Named sessions:** create or resume a session, then search, copy, export, or clear its scans. Offline scans keep their original session.
+- **Optional keyboard input:** type scans into a spreadsheet, browser form, or other app, followed by Enter, Tab, or nothing.
+
+## Install and pair
+
+Download the matching files from [Releases](https://github.com/hnkabraham/CT45-Computer-Link/releases/tag/v2.0.0):
+
+| Device | Download |
+|---|---|
+| Apple silicon Mac | `CT45-Computer-Link-2.0.0-mac-arm64.dmg` |
+| Intel Mac | `CT45-Computer-Link-2.0.0-mac-x64.dmg` |
+| Windows x64 | `CT45-Computer-Link-2.0.0-windows-x64.exe` |
+| Honeywell CT45 / Android 8+ | `CT45-Computer-Link-2.0.0.apk` |
+
+1. Install and open **CT45 Computer Link** on the computer. On macOS, drag the app from the DMG into Applications. On Windows, run the installer.
+2. Open the APK on the CT45 and allow installation from that source when prompted. Alternatively, enable USB debugging and run `adb install -r CT45-Computer-Link-2.0.0.apk`.
+3. Connect both devices to the same local network. Open the Android app and use the CT45’s scan button to scan the computer’s QR code.
+4. Wait for **Connected**, then scan a barcode. No account or cloud service is needed.
+
+The desktop installers are **not signed with a verified publisher certificate or notarized**. macOS and Windows may require an explicit first-run approval. Only approve the app if you trust its source; `SHA256SUMS.txt` in the release lets you check download integrity. On macOS, try **System Settings → Privacy & Security → Open Anyway** after opening the app. If macOS instead reports the downloaded app as damaged, remove its quarantine attribute only after verifying the download:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/CT45 Computer Link.app"
 ```
-CT45 (Android 13)                          Computer (macOS / Windows)
-┌──────────────────────┐   Wi-Fi, same     ┌─────────────────────────────┐
-│ CT45 Tracker app     │   network         │ CT45 Tracker desktop app    │
-│  scan button ────────┼──────────────────▶│  list · search · CSV export │
-│  outbox (offline OK) │   WebSocket       │  optional: type into apps   │
-└──────────────────────┘                   └─────────────────────────────┘
-```
 
-- **Pairing:** the desktop app shows a QR code. You scan it with the CT45 once. There's no IP
-  address to type.
-- **Nothing gets lost:** scans made while out of Wi-Fi range, or while the computer is off,
-  wait on the CT45 and send when it reconnects. They survive the app being closed.
-- **No duplicates:** each scan has an ID, and the computer ignores repeats.
+On Windows, SmartScreen may show **More info → Run anyway**. Allow incoming connections on your trusted private network when the firewall asks.
 
-## Set up
+### Quick desktop demo
 
-### 1. On the computer
+![Pairing and scanning demo](docs/images/pairing-demo.gif)
 
-With Node.js 20+ installed, clone this repository and run the desktop app:
+The demo uses a simulated scanner and a disposable pairing code. The Android screenshot below is from an Android 13 emulator; physical Honeywell scanning has not yet been verified for this release.
+
+<img src="docs/images/android.png" alt="Android app with encrypted connection, current session, and saved scans" width="300">
+
+## Upgrading from v1.0.0
+
+Install both v2 apps, then scan the new pairing QR code once. The encrypted protocol deliberately does not accept the old unencrypted pairing links.
+
+- The published v1.0.0 Android APK can be updated **without uninstalling**. A signing-key rotation preserves its saved scans and settings. This upgrade was tested on Android 13. Builds signed with somebody else’s debug key are a different signing identity and cannot use this upgrade path.
+- Android 9+ uses the new dedicated release signing key. Android 8 retains the original signer for compatibility; the APK itself is a non-debuggable release build on every supported version.
+- The desktop keeps the previous `CT45 Tracker` data directory so scan history and settings remain available. Earlier scans appear in **General**.
+- Keep only one desktop version open. If you previously installed an app named **CT45 Tracker**, replace/remove that app after installing the new one; keep its data directory.
+
+## Sessions, exports, and scanning
+
+**Scanning into** sets the session for newly captured scans. Choose **New session**, enter a name, and start scanning. Select an existing session to resume it. Connected CT45s show the current session; disconnected CT45s keep their last known session until they reconnect. Unpaired scans and history from v1 go into **General**.
+
+**Show scans from** filters the list without changing the active scanning session. Search narrows that view. Click a row to copy its barcode; **Copy all** copies the current view, newest first. **Export Excel** and **CSV** export the session/search results, oldest first, with time, barcode, type, device, and session. Excel is the recommended format when exact barcode text matters: CSV readers may reinterpret numeric strings.
+
+**Clear** removes the selected session’s scans, including those hidden by search. Selecting **All sessions** clears every session’s scans. Export first if you need them. Session names remain available to resume.
+
+**Type into other apps** sends new scans to the app containing your cursor. The desktop does not type while its own window is active, or when a scan waited more than 60 seconds before sending. Delayed scans still appear in the log. On macOS, grant Accessibility permission and allow System Events when asked. Windows cannot type into an app running as administrator.
+
+On the CT45, **Keep running in the background** keeps the scanner claimed while another app or the lock screen is visible, with a persistent notification. Turn it off to return the scanner to other apps. Screen-off scanning depends on the device’s Honeywell firmware and scan-button settings. Pairing QR codes are accepted only while this app is on screen.
+
+If the device shows **Not saved**, keep the app open and free storage. It retries saving every five seconds and sends only after saving succeeds. Unsaved in-memory scans cannot survive the app being stopped. Scans made while Android has stopped the scanner app cannot be recovered.
+
+## Connection help
+
+| Symptom | What to check |
+|---|---|
+| Not connected | Open both v2 apps and scan the current QR code. |
+| Cannot reach the computer | Keep the desktop app open. Check the firewall and that both devices can reach each other on the local network. Guest Wi-Fi often blocks this. |
+| Computer’s IP changed | Reconnection uses mDNS on the same local network. It starts after the old connection fails; pending scans trigger a check within about 10 seconds. Idle connections can take longer. |
+| Discovery is blocked | If your network blocks multicast/mDNS (UDP 5353), rescan the updated QR code or use USB. Discovery does not cross routed subnets automatically. |
+| Pairing code changed | Scan the new QR code. Making a new code revokes the previous token. |
+| Repeated connection failures after replacing the computer | The app will not send scans. Open the intended computer’s app and scan its QR code again. |
+| Scans only work with the Android app open | Enable background mode. If necessary, configure Honeywell Data Intent with action `com.henokabraham.ct45tracker.SCAN` and disable Wedge in the scanner profile. |
+
+**USB fallback:** enable USB debugging, connect the cable, and run `adb reverse tcp:8765 tcp:8765`. If the desktop shows a different port, substitute it on both sides. The QR code includes the loopback route; encrypted connections work over USB too. Repeat the command after reconnecting the cable.
+
+## Privacy and security
+
+Barcode traffic uses TLS 1.2 or later. The Android app checks the exact certificate fingerprint from the QR code before sending its pairing token. Network discovery advertises only a public computer ID and port; a matching discovery name alone is not trusted. A new IP address does not require trusting a new certificate.
+
+The pairing QR code grants access to send scans and should be kept private. Use **New pairing code** to revoke it. Scans and exports are stored locally, without additional at-rest encryption; protect them with your device’s account and disk security. There is no scan telemetry or cloud upload. The desktop identity lasts ten years; a replacement identity requires pairing again.
+
+## Development
+
+The desktop uses Electron and Node.js 20+; Android uses Kotlin, JDK 17, and the Android SDK. Application IDs and the `ct45tracker://pair` scheme are retained for compatibility.
 
 ```sh
 git clone https://github.com/hnkabraham/CT45-Computer-Link.git
 cd CT45-Computer-Link/desktop
 npm ci
 npm start
+npm test
+npm run e2e
+npm run fake-scanner -- "<pairing link>" 0000123456789
+npm run dist:mac
+npm run dist:win
+
+cd ../android
+./gradlew testDebugUnitTest assembleDebug assembleRelease lintDebug
 ```
 
-Alternatively, build a desktop installer using the Development commands below. The resulting
-files are written to `desktop/dist/`:
+`assembleRelease` produces an unsigned APK. The maintainer signs it with `android/scripts/sign-release.sh`; private keys and passwords live outside this repository. See [release signing and recovery](docs/releasing.md) and the [protocol specification](docs/protocol.md).
 
-| | File |
-|---|---|
-| Mac with Apple silicon | `CT45 Tracker-1.0.0-arm64.dmg` |
-| Mac with Intel | `CT45 Tracker-1.0.0.dmg` |
-| Windows | `CT45 Tracker Setup 1.0.0.exe` |
-
-The builds aren't signed yet, so the first launch needs one extra step:
-- **macOS:** a build made on this Mac opens normally. Copied to another Mac, macOS may say the
-  app "is damaged". After dragging it to Applications, run
-  `xattr -dr com.apple.quarantine "/Applications/CT45 Tracker.app"` once in Terminal.
-- **Windows** SmartScreen says "Windows protected your PC". Click **More info** → **Run anyway**.
-  When Windows Firewall asks, allow **Private networks**. Otherwise the CT45 can't connect. Windows
-  treats most new Wi-Fi networks as **Public**, which that doesn't cover. Either set your Wi-Fi to
-  Private (Settings → Network & internet → Wi-Fi → your network → **Private network**) or also
-  tick **Public networks** in the firewall prompt.
-
-### 2. On the CT45
-
-Download `CT45-Computer-Link-1.0.0-debug.apk` from the
-[v1.0.0 release](https://github.com/hnkabraham/CT45-Computer-Link/releases/tag/v1.0.0).
-It supports Android 8.0 and later and is intended for the Honeywell CT45 running Android 13.
-Either:
-- **USB:** on the CT45 turn on Developer options (Settings → About phone → tap **Build number**
-  7 times) and then **USB debugging**. Plug it in and run
-  `adb install -r CT45-Computer-Link-1.0.0-debug.apk` from the download folder.
-- **No cable:** copy the APK to the CT45 and open it in Files. Allow installing unknown apps
-  when asked.
-
-When building from source, the debug APK is at `android/app/build/outputs/apk/debug/app-debug.apk`.
-
-### 3. Pair
-
-Put the CT45 on the same Wi-Fi as the computer. Open **CT45 Tracker** on both, then press the
-CT45's scan button while aiming at the QR code on the computer screen. The CT45 shows
-**Connected to <computer>** and the computer shows the CT45. Scan away.
-
-The CT45 remembers the pairing. You only pair again if you click **New pairing code** on the
-computer, or if the computer's network address changes (for example, a different Wi-Fi). The
-CT45 then says it can't reach the computer; scan the QR code again.
-
-## Using it
-
-**Desktop:** click a row to copy that barcode. **Copy all** copies the list, filtered by search
-if you've typed one. **Export CSV** saves time, barcode, barcode type and device, oldest first.
-It opens cleanly in Excel and Numbers. **Clear** empties the list; export first if you need it.
-Scans are saved as you go, so quitting the app doesn't lose them.
-
-If a desktop write is interrupted, the next launch separates the damaged entry from new scans
-so later scans remain readable after another restart.
-
-**Type into other apps:** turn on **Type each scan where your cursor is** and choose what to
-press after each scan (Enter, Tab, or nothing). Click into a spreadsheet cell or a web form and
-scan. A scan isn't typed while CT45 Tracker itself is the front window; it's still listed. Scans that
-waited on the CT45 while it was disconnected aren't typed when they arrive later either, so a
-backlog can't pour into whatever you have open. They're listed like any other scan.
-- **macOS** asks for permission the first time. Allow it in System Settings → Privacy & Security
-  → **Accessibility** (and click OK if asked to let it control System Events). If you run from
-  source with `npm start`, macOS may ask about your terminal app instead. After installing a
-  new build, turn the Accessibility switch off and on again; macOS ties the permission to
-  that exact build.
-- **Windows** needs no setup. It can't type into apps running as administrator.
-
-**CT45:** the screen shows connection status, the last scan, and recent scans marked **Sent** or
-**Waiting**. You can type or paste a barcode in the box at the bottom. Normally the app takes
-over the scanner only while it's on screen; other apps get it back normally.
-
-If the CT45 cannot save a scan, it shows **Not saved** and a warning on screen (and in the
-background notification). Keep the app running and free some storage. It retries every five
-seconds and sends the scan once it is saved. Unsaved scans cannot survive the app being stopped.
-Invalid pairing codes show an error and leave the current pairing in place.
-
-**Pairing** only works with CT45 Tracker open on screen. A pairing code that arrives while it's in
-the background is ignored, so another app on the CT45 can't point it at a different computer.
-
-**Keep running in the background (CT45):** turn this on to keep scanning while the CT45 is locked
-or another app is open. A silent notification shows while it's on. To stop, tap **Turn off** on
-the notification or use the switch. It comes back on by itself after a restart. While it's on,
-other apps on the CT45 don't receive scans.
-
-- **If scans only go through while the app is open:** the scanner may not stay with an app
-  that's not on screen. Set it on the CT45 instead: Settings → Honeywell Settings → Scanning →
-  Internal Scanner → Default profile → Data Processing Settings. Turn off **Wedge**, turn on
-  **Data Intent**, and set its action to `com.henokabraham.ct45tracker.SCAN`. Menu names can
-  differ slightly between firmware versions. Every scan then goes to CT45 Tracker, whatever is on
-  screen.
-- **With the screen fully off**, it depends on whether the CT45's scan button works while the
-  screen is dark. Try it: if the red aiming light comes on, scans go through; if not, press Power
-  first.
-- **If Android stops the app** (rare with the notification showing), it restarts it within a
-  few seconds. Scans made in that gap are lost, because the scanner is still set to hand them to
-  an app that isn't running. To check, with the CT45 plugged in, run
-  `adb shell am kill com.henokabraham.ct45tracker`, scan straight away, and see whether the scan
-  arrives.
-
-## If it won't connect
-
-| CT45 says | Try |
-|---|---|
-| Can't reach <computer> | CT45 Tracker must be open on the computer and both devices on the same Wi-Fi. Guest and corporate networks often block device-to-device traffic. Use a phone hotspot or the USB fallback below. On Windows, check the firewall allowed CT45 Tracker on private networks. On a Mac with the firewall on, click **Allow** when asked about incoming connections (unsigned builds may ask on each launch) |
-| Pairing code changed | Someone clicked **New pairing code**. Scan the new QR code |
-| Not connected | Not paired yet. Scan the QR code |
-
-**Security:** the connection is plain `ws://` on your local network. Anyone on the same Wi-Fi who
-can capture traffic could read scans and the pairing token. The QR code on screen is the key:
-anyone who scans it can send scans to your computer, so click **New pairing code** if someone
-else may have scanned it. Scans marked **Rejected** on the CT45 were refused by the computer and
-won't be sent again.
-
-**USB fallback** for networks that block device-to-device traffic: plug the CT45 into the computer
-(USB debugging on) and run `adb reverse tcp:8765 tcp:8765`. The pairing code already includes
-this route, so the CT45 connects over the cable within a few seconds. Run the command again
-after unplugging and replugging.
-
-## Development
-
-```
-desktop/   Electron app (Node 20+). src/ has the logic, ui/ the window.
-android/   Kotlin app, no Honeywell SDK needed (uses Honeywell's broadcast intent API).
-docs/protocol.md   What goes over the wire.
-```
+Android integration tests require a **disposable emulator** because they clear app data and change its temporary lock settings:
 
 ```sh
 cd desktop
-npm test               # unit tests: protocol, server, CSV, typing commands, storage
-npm run e2e            # launches the real app in a throwaway profile and drives it with a fake scanner
-npm run fake-scanner -- "<pairing link>" 0123456789012   # send scans to a running app (Copy pairing link)
-npm run android-e2e    # Android app on an emulator or USB device against the desktop server code
-npm run dist:mac       # dmg for Apple silicon and Intel → dist/
-npm run dist:win       # Windows installer → dist/ (builds on a Mac too)
-
-cd android
-./gradlew testDebugUnitTest assembleDebug   # needs JDK 17 (JAVA_HOME) and the Android SDK
+ANDROID_SERIAL=emulator-5580 npm run android-e2e
+OLD_APK=/path/to/CT45-Computer-Link-1.0.0-debug.apk \
+  ANDROID_SERIAL=emulator-5580 node scripts/android-release-e2e.mjs
 ```
 
-`android-e2e` needs a running emulator (`emulator -avd ct45-test`) or a device. With the
-emulator, the computer is `10.0.2.2`. It stands in for the scanner by sending the same
-broadcast Honeywell's scanner service sends.
+The release test installs v1, upgrades to the signed v2 APK, and checks preserved scans, certificate rejection, offline sessions, and discovery at a new endpoint. The emulator must start without this app installed. mDNS testing needs a network that carries discovery traffic.
 
-**Honeywell scanner details:** while the app is on screen, it claims the scanner with
-`com.honeywell.aidc.action.ACTION_CLAIM_SCANNER`. The claim sets `DPR_DATA_INTENT` and
-`DPR_WEDGE=false`, so scans arrive as broadcasts rather than keystrokes. If a unit doesn't honor
-the claim, its keyboard-wedge output lands in the app's text box and Enter sends it. So scanning
-still works; it just may need a tap on **Send** if the wedge doesn't add Enter.
+**Validation limits:** automated tests and emulator checks do not replace testing a physical CT45, Windows, or a particular corporate Wi-Fi network. macOS installers are built for both architectures; Windows is cross-built. See the release notes for the exact checks performed.

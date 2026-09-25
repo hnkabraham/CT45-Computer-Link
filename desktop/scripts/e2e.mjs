@@ -2,7 +2,7 @@
 // checks the window over the DevTools protocol. Never turns typing on while scans arrive, so
 // it can't type into whatever you have open.
 //   npm run e2e            (SCREENSHOT_DIR=/some/dir to keep screenshots)
-//   CT45_APP="dist/mac-arm64/CT45 Tracker.app/Contents/MacOS/CT45 Tracker" npm run e2e
+//   CT45_APP="dist/mac-arm64/CT45 Computer Link.app/Contents/MacOS/CT45 Computer Link" npm run e2e
 //                          tests a packaged build instead of the source
 
 import { execFileSync, spawn } from 'node:child_process';
@@ -19,6 +19,7 @@ const PORT = 18765;
 const DEBUG_PORT = 19333;
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ct45-e2e-'));
 const shots = process.env.SCREENSHOT_DIR;
+if (shots) fs.mkdirSync(shots, { recursive: true });
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -212,6 +213,27 @@ try {
   await cdp.eval('document.getElementById("clear-yes").click(); true');
   check('clear empties the list', await cdp.waitFor('!document.getElementById("empty").hidden'));
   check('clear leaves no barcodes in the file', !fs.readFileSync(path.join(userData, 'scans.jsonl'), 'utf8').includes('"data"'));
+
+  // Session controls, offline attribution and session-scoped clearing.
+  await cdp.eval('document.getElementById("new-session").click(); document.getElementById("session-name").value = "Warehouse count"; document.getElementById("session-form").requestSubmit(); true');
+  check('new session selected for scanning and viewing', await cdp.waitFor('document.getElementById("active-session").selectedOptions[0].textContent === "Warehouse count" && document.getElementById("view-session").value === document.getElementById("active-session").value'));
+  const named = await fakeScan(newLink, ['0000123456789', '12345678901234567890', 'BIN-A-0042'], { host: '127.0.0.1', device: 'Demo CT45' });
+  check('new scans carry the active session', await cdp.waitFor(`${rows} === 3`) && (await cdp.eval('window.ct45.getState()')).scans.every((s) => s.sessionName === 'Warehouse count'));
+  named.ws.send(JSON.stringify({ type: 'scan', id: 'late', data: 'OFFLINE-GENERAL', scannedAt: Date.now() - 120000, sessionId: 'default', sessionName: 'General' }));
+  await sleep(250);
+  check('offline scan stays in its earlier session', (await cdp.eval(rows)) === 3 && (await cdp.eval('window.ct45.getState()')).scans.find((s) => s.id === 'late').sessionId === 'default');
+  await sleep(2600);
+  await cdp.screenshot('ct45-desktop-sessions.png');
+  named.ws.close();
+  cdp.close();
+  await quit(child);
+  ({ child, cdp } = await launch());
+  check('active session persists after restart', (await cdp.eval('document.getElementById("active-session").selectedOptions[0].textContent')) === 'Warehouse count');
+  await cdp.eval('document.getElementById("view-session").value = document.getElementById("active-session").value; document.getElementById("view-session").dispatchEvent(new Event("change")); document.getElementById("clear").click(); document.getElementById("clear-yes").click(); true');
+  check('clearing one session keeps the other session', await cdp.waitFor('document.querySelectorAll("#rows tr").length === 0') && (await cdp.eval('window.ct45.getState()')).scans.length === 1);
+  await cdp.eval('document.getElementById("active-session").value = "default"; document.getElementById("active-session").dispatchEvent(new Event("change")); true');
+  check('an earlier session can be resumed', await cdp.waitFor('(async () => (await window.ct45.getState()).sessions.activeId === "default")()'));
+
 } finally {
   cdp.close();
   await quit(child);

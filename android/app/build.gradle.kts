@@ -12,15 +12,15 @@ android {
         minSdk = 26
         // The CT45 runs Android 13.
         targetSdk = 33
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0.0"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so a release build installs without extra setup.
-            signingConfig = signingConfigs.getByName("debug")
+            // Release APKs are signed separately with the private release key and rotation lineage.
+            // See scripts/sign-release.sh. No signing credentials belong in this repository.
         }
     }
 

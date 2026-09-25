@@ -11,9 +11,9 @@ import { lanAddresses } from '../src/network.js';
 import { ScanStore } from '../src/store.js';
 
 test('pairing URL round-trips', () => {
-  const url = pairingUrl({ hosts: ['192.168.1.5', '10.0.0.2'], port: 8765, token: 'abc_-123', name: "Henok's Mac" });
+  const url = pairingUrl({ hosts: ['192.168.1.5', '10.0.0.2'], port: 8765, token: 'abc_-123', name: "Henok's Mac", computerId: "test-id", fingerprint: "a".repeat(64) });
   assert.ok(url.startsWith('ct45tracker://pair?'));
-  assert.deepEqual(parsePairingUrl(url), { hosts: ['192.168.1.5', '10.0.0.2'], port: 8765, token: 'abc_-123', name: "Henok's Mac" });
+  assert.deepEqual(parsePairingUrl(url), { hosts: ['192.168.1.5', '10.0.0.2'], port: 8765, token: 'abc_-123', name: "Henok's Mac", computerId: "test-id", fingerprint: "a".repeat(64) });
 });
 
 test('ordinary barcodes are not mistaken for pairing codes', () => {
@@ -38,7 +38,7 @@ test('client messages are validated', () => {
     msg: { type: 'hello', token: 't', device: 'CT45', app: '' },
   });
   const scan = parseClientMessage(JSON.stringify({ type: 'scan', id: 'a', data: 'X1', scannedAt: 5, aimId: ']C0', extra: 1 }));
-  assert.deepEqual(scan.msg, { type: 'scan', id: 'a', data: 'X1', scannedAt: 5, sentAt: null, aimId: ']C0', codeId: '' });
+  assert.deepEqual(scan.msg, { type: 'scan', id: 'a', data: 'X1', scannedAt: 5, sentAt: null, aimId: ']C0', codeId: '', sessionId: '', sessionName: '' });
   assert.equal(parseClientMessage(JSON.stringify({ type: 'scan', id: 'a', data: 'X1', scannedAt: 5, sentAt: 9 })).msg.sentAt, 9);
   assert.equal(parseClientMessage(JSON.stringify({ type: 'scan', id: 'a', data: 'X1', scannedAt: 5, sentAt: 'x' })).ok, false);
   assert.equal(parseClientMessage('nope').ok, false);
@@ -88,7 +88,7 @@ test('CSV export is oldest first with a header, BOM and CRLF', () => {
   ]);
   assert.equal(
     csv,
-    '﻿Scanned at,Barcode,Type,Device\r\n2026-09-24 09:05:07,A,QR Code,CT45\r\n2026-09-24 09:05:08,B,Code 128,CT45\r\n',
+    '﻿Scanned at,Barcode,Type,Device,Session\r\n2026-09-24 09:05:07,A,QR Code,CT45,General\r\n2026-09-24 09:05:08,B,Code 128,CT45,General\r\n',
   );
 });
 

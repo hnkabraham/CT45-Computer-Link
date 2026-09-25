@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">CT45 Tracker</string>
+    <string name="app_name">CT45 Computer Link</string>
     <string name="unpair">Unpair</string>
     <string name="last_scan">Last scan</string>
-    <string name="scan_meta">%1$s · %2$s</string>
+    <string name="scan_meta">%1$s · %2$s · %3$s</string>
     <string name="recent">Recent scans</string>
     <string name="nothing_scanned">Nothing scanned yet</string>
     <string name="manual_hint">Type or paste a barcode</string>
@@ -13,20 +13,21 @@
     <string name="rejected">Rejected</string>
     <string name="not_saved">Not saved</string>
     <string name="storage_error_title">Can\'t save scans</string>
-    <string name="storage_error_detail">Can\'t save scans on this device. Free some storage and keep CT45 Tracker running. Retrying automatically.</string>
-    <string name="invalid_pairing">This pairing code is invalid. Scan the QR code shown in CT45 Tracker on your computer again.</string>
-    <string name="open_app_to_pair">To pair with a computer, open CT45 Tracker and scan the code again.</string>
+    <string name="storage_error_detail">Can\'t save scans on this device. Free some storage and keep CT45 Computer Link running. Retrying automatically.</string>
+    <string name="invalid_pairing">This code is invalid or from an older app version. Scan the QR code shown in CT45 Computer Link on your computer again.</string>
+    <string name="open_app_to_pair">To pair with a computer, open CT45 Computer Link and scan the code again.</string>
     <string name="scanner_missing">No Honeywell scanner found on this device. Type or paste barcodes below.</string>
 
     <string name="status_not_paired">Not connected</string>
-    <string name="status_not_paired_detail">On your computer, open CT45 Tracker and scan the QR code it shows.</string>
+    <string name="status_not_paired_detail">On your computer, open CT45 Computer Link and scan the QR code it shows.</string>
     <string name="status_connecting">Connecting to %1$s…</string>
     <string name="status_connected">Connected to %1$s</string>
-    <string name="status_connected_detail">Scans show up on your computer as you scan.</string>
+    <string name="status_connected_detail">Encrypted connection. Ready to scan.</string>
+    <string name="current_session">Session: %1$s</string>
     <string name="status_retrying">Can\'t reach %1$s</string>
-    <string name="status_retrying_detail">Make sure CT45 Tracker is open on the computer and both are on the same Wi-Fi. Retrying…</string>
+    <string name="status_retrying_detail">Make sure CT45 Computer Link is open on the computer and both are on the same Wi-Fi. Looking for the computer automatically…</string>
     <string name="status_expired">Pairing code changed</string>
-    <string name="status_expired_detail">Scan the new QR code in CT45 Tracker on your computer.</string>
+    <string name="status_expired_detail">Scan the new QR code in CT45 Computer Link on your computer.</string>
     <string name="your_computer">your computer</string>
     <plurals name="waiting_count">
         <item quantity="one">%d scan waiting to send.</item>
@@ -41,7 +42,7 @@
     <string name="background_title">Keep running in the background</string>
     <string name="background_hint">Scans still go through when the screen is locked or another app is open. Other apps won\'t receive scans while this is on. Shows a notification.</string>
     <string name="channel_name">Background scanning</string>
-    <string name="channel_description">Shown while CT45 Tracker keeps sending scans in the background.</string>
+    <string name="channel_description">Shown while CT45 Computer Link keeps sending scans in the background.</string>
     <string name="notification_connected">Sending scans to %1$s</string>
     <string name="notification_ready">Ready. Scans go through even when the screen is locked.</string>
     <string name="notification_retrying">Scans are kept until it\'s back.</string>

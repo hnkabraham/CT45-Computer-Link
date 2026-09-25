@@ -76,10 +76,14 @@ export class ScanStore {
 
   // Only the ids are kept, even across restarts, so a scan the CT45 resends later (its
   // acknowledgement got lost) doesn't come back.
-  clear() {
+  clear(sessionId = '') {
+    const remaining = sessionId ? this.scans.filter((s) => (s.sessionId || 'default') !== sessionId) : [];
     const keep = [...this.ids].slice(-REMEMBER_CLEARED);
-    fs.writeFileSync(this.file, keep.map((id) => `${JSON.stringify({ id, cleared: true })}\n`).join(''));
-    this.ids = new Set(keep);
-    this.scans = [];
+    const survivors = new Set(remaining.map((s) => s.id));
+    const records = [...keep.filter((id) => !survivors.has(id)).map((id) => ({ id, cleared: true })), ...remaining];
+    fs.writeFileSync(`${this.file}.tmp`, records.map((s) => `${JSON.stringify(s)}\n`).join(''));
+    fs.renameSync(`${this.file}.tmp`, this.file);
+    this.ids = new Set([...keep, ...survivors]);
+    this.scans = remaining;
   }
 }

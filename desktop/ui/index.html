@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CT45 Tracker</title>
+  <title>CT45 Computer Link</title>
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>CT45 Tracker</h1>
+    <h1>CT45 Computer Link</h1>
     <p id="connection" class="connection" role="status"><span class="dot"></span><span id="connection-text">Starting…</span></p>
   </header>
 
@@ -25,7 +25,8 @@
           <summary id="pair-title"><h2>Connect a scanner</h2></summary>
           <div class="pair-body">
             <img id="qr" class="qr" alt="Pairing QR code">
-            <p class="pair-help">Open <strong>CT45 Tracker</strong> on the CT45 and scan this code with the scan button.</p>
+            <p class="pair-help">Open <strong>CT45 Computer Link</strong> on the CT45 and scan this code with the scan button.</p>
+            <p class="secure-note">Encrypted · Reconnects automatically</p>
             <p class="pair-address"><span id="pair-address"></span></p>
             <p id="no-network" class="warn" hidden>This computer isn't on a network. Connect it to the same Wi-Fi as the CT45.</p>
             <div class="pair-actions">
@@ -58,13 +59,26 @@
         <p id="typing-unsupported" class="muted small" hidden>Typing into other apps works on macOS and Windows.</p>
         <p id="typing-status" class="muted small" hidden></p>
         <div id="permission" class="warn" hidden>
-          <p>macOS blocked typing. In <strong>System Settings → Privacy &amp; Security → Accessibility</strong>, turn on CT45 Tracker. If macOS asks to let it control System Events, click OK.</p>
+          <p>macOS blocked typing. In <strong>System Settings → Privacy &amp; Security → Accessibility</strong>, turn on CT45 Computer Link. If macOS asks to let it control System Events, click OK.</p>
           <button id="open-accessibility" class="btn small" type="button">Open Accessibility settings</button>
         </div>
       </section>
     </aside>
 
     <main class="main">
+      <section class="session-bar" aria-label="Scanning session">
+        <label for="active-session">Scanning into</label>
+        <select id="active-session" aria-label="Active scanning session"></select>
+        <button id="new-session" class="btn" type="button">New session</button>
+      </section>
+      <form id="session-form" class="session-form" hidden>
+        <label for="session-name">Session name</label>
+        <input id="session-name" maxlength="80" placeholder="e.g. Warehouse count — September" required>
+        <button class="btn primary" type="submit">Start session</button>
+        <button id="session-cancel" class="btn" type="button">Cancel</button>
+      </form>
+      <p class="muted small session-hint">Offline scans stay in the session they were captured in.</p>
+      <label class="view-label" for="view-session">Show scans from <select id="view-session" aria-label="Filter by session"><option value="">All sessions</option></select></label>
       <div class="toolbar">
         <label class="search">
           <span class="visually-hidden">Search scans</span>
@@ -72,7 +86,8 @@
         </label>
         <div class="toolbar-actions">
           <button id="copy-all" class="btn" type="button">Copy all</button>
-          <button id="export" class="btn primary" type="button">Export CSV</button>
+          <button id="export" class="btn primary" type="button">Export Excel</button>
+          <button id="export-csv" class="btn" type="button">CSV</button>
           <button id="clear" class="btn" type="button">Clear</button>
         </div>
       </div>
@@ -93,7 +108,7 @@
 
       <table id="table" class="scans" hidden>
         <thead>
-          <tr><th scope="col">Time</th><th scope="col">Barcode</th><th scope="col">Type</th><th scope="col">Device</th></tr>
+          <tr><th scope="col">Time</th><th scope="col">Barcode</th><th scope="col">Type</th><th scope="col">Device</th><th scope="col">Session</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>

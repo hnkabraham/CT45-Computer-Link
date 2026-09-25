@@ -43,6 +43,8 @@ data class ScanLogState(val scans: List<LoggedScan> = emptyList()) {
                 .put("scannedAt", s.scannedAt)
                 .put("aimId", s.aimId)
                 .put("codeId", s.codeId)
+                .put("sessionId", s.sessionId)
+                .put("sessionName", s.sessionName)
                 .put("sent", sent)
                 .put("rejected", rejected)
         },
@@ -65,6 +67,8 @@ data class ScanLogState(val scans: List<LoggedScan> = emptyList()) {
                                 scannedAt = o.getLong("scannedAt"),
                                 aimId = o.optString("aimId"),
                                 codeId = o.optString("codeId"),
+                                sessionId = o.optString("sessionId", "default"),
+                                sessionName = o.optString("sessionName", "General"),
                             ),
                             sent = o.optBoolean("sent"),
                             rejected = o.optBoolean("rejected"),

@@ -8,12 +8,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProtocolTest {
+    private val pin = "a".repeat(64)
+    private val security = "v=2&id=test-computer&fp=$pin&"
+    @Test
+    fun `legacy pairing never downgrades encryption`() {
+        assertNull(Protocol.parsePairing("ct45tracker://pair?h=localhost&p=8765&t=secret"))
+        assertNull(Protocol.parsePairing("ct45tracker://pair?v=2&id=test&fp=bad&h=localhost&p=8765&t=secret"))
+    }
+
+    @Test
+    fun `offline scans preserve sessions while legacy history uses General`() {
+        val captured = Protocol.Scan("a", "00001", 1, sessionId = "morning", sessionName = "Morning count")
+        val state = ScanLogState().add(captured)
+        assertEquals(captured, ScanLogState.fromJson(state.toJson()).unsent.single())
+        val message = JSONObject(Protocol.scan(captured, 9))
+        assertEquals("morning", message.getString("sessionId"))
+        assertEquals("Morning count", message.getString("sessionName"))
+        val old = ScanLogState.fromJson("""[{"id":"old","data":"001","scannedAt":1}]""")
+        assertEquals("default", old.unsent.single().sessionId)
+        assertEquals("General", old.unsent.single().sessionName)
+        assertEquals(Protocol.ServerMessage.SessionChanged(Protocol.Session("b", "Evening")),
+            Protocol.parseServer("""{"type":"session","session":{"id":"b","name":"Evening"}}"""))
+    }
+
     @Test
     fun `reads a pairing code made by the desktop app`() {
         // Output of desktop/src/protocol.js pairingUrl() for these values.
-        val url = "ct45tracker://pair?h=192.168.1.5%2C10.0.0.2&p=8765&t=abc_-123&n=Henok%27s+Mac+%2B+PC"
+        val url = "ct45tracker://pair?${security}h=192.168.1.5%2C10.0.0.2&p=8765&t=abc_-123&n=Henok%27s+Mac+%2B+PC"
         assertEquals(
-            Protocol.Pairing(listOf("192.168.1.5", "10.0.0.2"), 8765, "abc_-123", "Henok's Mac + PC"),
+            Protocol.Pairing(listOf("192.168.1.5", "10.0.0.2"), 8765, "abc_-123", "Henok's Mac + PC", "test-computer", pin),
             Protocol.parsePairing(url),
         )
     }
@@ -22,15 +45,15 @@ class ProtocolTest {
     fun `ordinary barcodes are not pairing codes`() {
         assertNull(Protocol.parsePairing("0123456789012"))
         assertNull(Protocol.parsePairing("https://example.com/?h=1&p=2&t=3"))
-        assertNull(Protocol.parsePairing("ct45tracker://pair?h=1.2.3.4&p=70000&t=x"))
-        assertNull(Protocol.parsePairing("ct45tracker://pair?h=1.2.3.4&p=8765"))
-        assertNull(Protocol.parsePairing("ct45tracker://pair?h=&p=8765&t=x"))
-        assertNull(Protocol.parsePairing("ct45tracker://pair?h=1.2.3.4&p=8765&t=%zz"))
+        assertNull(Protocol.parsePairing("ct45tracker://pair?${security}h=1.2.3.4&p=70000&t=x"))
+        assertNull(Protocol.parsePairing("ct45tracker://pair?${security}h=1.2.3.4&p=8765"))
+        assertNull(Protocol.parsePairing("ct45tracker://pair?${security}h=&p=8765&t=x"))
+        assertNull(Protocol.parsePairing("ct45tracker://pair?${security}h=1.2.3.4&p=8765&t=%zz"))
     }
 
     @Test
     fun `a missing name is allowed`() {
-        assertEquals("", Protocol.parsePairing("ct45tracker://pair?h=10.0.2.2&p=8765&t=tok")?.name)
+        assertEquals("", Protocol.parsePairing("ct45tracker://pair?${security}h=10.0.2.2&p=8765&t=tok")?.name)
     }
 
     @Test
@@ -38,19 +61,19 @@ class ProtocolTest {
         val hosts = listOf("bad host", "host/path", "host?query", "user@host", "host#fragment", "host\\path", "[broken", "http://host")
         for (host in hosts) {
             val encoded = java.net.URLEncoder.encode(host, "UTF-8")
-            assertNull(host, Protocol.parsePairing("ct45tracker://pair?h=$encoded&p=8765&t=tok"))
-            assertNull(host, Protocol.validatedPairing(Protocol.Pairing(listOf(host), 8765, "tok", "Mac")))
+            assertNull(host, Protocol.parsePairing("ct45tracker://pair?${security}h=$encoded&p=8765&t=tok"))
+            assertNull(host, Protocol.validatedPairing(Protocol.Pairing(listOf(host), 8765, "tok", "Mac", "test-computer", pin)))
         }
-        assertNull(Protocol.parsePairing("ct45tracker://pair?h=127.0.0.1&p=8765&t=${"x".repeat(129)}"))
+        assertNull(Protocol.parsePairing("ct45tracker://pair?${security}h=127.0.0.1&p=8765&t=${"x".repeat(129)}"))
         assertNull(Protocol.validatedPairing(Protocol.Pairing(emptyList(), 8765, "tok", "")))
         assertNull(Protocol.validatedPairing(Protocol.Pairing(listOf("localhost"), 0, "tok", "")))
     }
 
     @Test
     fun `valid IPv4 IPv6 and hostname pairings build usable connection URLs`() {
-        val pairing = Protocol.parsePairing("ct45tracker://pair?h=192.168.1.5,127.0.0.1,::1,[::1],Scanner.local&p=8765&t=tok")!!
+        val pairing = Protocol.parsePairing("ct45tracker://pair?${security}h=192.168.1.5,127.0.0.1,::1,[::1],Scanner.local&p=8765&t=tok")!!
         assertEquals(listOf("192.168.1.5", "127.0.0.1", "::1", "scanner.local"), pairing.hosts)
-        assertEquals("http://[::1]:8765/", Protocol.serverUrl(pairing.hosts[2], pairing.port).toString())
+        assertEquals("https://[::1]:8765/", Protocol.serverUrl(pairing.hosts[2], pairing.port).toString())
         pairing.hosts.forEach { host -> assertEquals(8765, Protocol.serverUrl(host, pairing.port).port) }
     }
 
@@ -73,7 +96,7 @@ class ProtocolTest {
 
     @Test
     fun `reads server messages`() {
-        assertEquals(Protocol.ServerMessage.Welcome("Mac"), Protocol.parseServer("""{"type":"welcome","name":"Mac","version":1}"""))
+        assertEquals(Protocol.ServerMessage.Welcome("Mac", Protocol.Session()), Protocol.parseServer("""{"type":"welcome","name":"Mac","version":2}"""))
         assertEquals(Protocol.ServerMessage.Ack("a"), Protocol.parseServer("""{"type":"ack","id":"a"}"""))
         assertEquals(
             Protocol.ServerMessage.Error("save-failed", "disk full", "z"),

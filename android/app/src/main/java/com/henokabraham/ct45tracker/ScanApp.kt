@@ -40,7 +40,7 @@ class ScanApp : Application() {
             if (log.hasSaveError && !saveFailed) Toast.makeText(this, R.string.storage_error_detail, Toast.LENGTH_LONG).show()
             saveFailed = log.hasSaveError
         }
-        link = DesktopLink(prefs, log, deviceName())
+        link = DesktopLink(this, prefs, log, deviceName())
         scanner = HoneywellScanner(this) { data, aimId, codeId ->
             lastScannerScan = data.trimEnd('\r', '\n')
             lastScannerScanAt = SystemClock.elapsedRealtime()
@@ -71,7 +71,7 @@ class ScanApp : Application() {
             return
         }
         link.start()
-        log.add(Protocol.Scan(UUID.randomUUID().toString(), data, System.currentTimeMillis(), aimId, codeId))
+        log.add(Protocol.Scan(UUID.randomUUID().toString(), data, System.currentTimeMillis(), aimId, codeId, link.session.id, link.session.name))
     }
 
     /** "Keep running in the background": the saved setting is what counts. */
