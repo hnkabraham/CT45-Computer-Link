@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon: a barcode. Android draws it white. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M3,5h2v14h-2z M6.5,5h1v14h-1z M9,5h2.5v14h-2.5z M13,5h1v14h-1z M15.5,5h1.5v14h-1.5z M18.5,5h1v14h-1z M20.5,5h0.5v14h-0.5z" />
+</vector>

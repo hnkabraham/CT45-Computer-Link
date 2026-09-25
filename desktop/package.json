@@ -1,0 +1,71 @@
+{
+  "name": "ct45-tracker",
+  "productName": "CT45 Tracker",
+  "version": "1.0.0",
+  "description": "Receives barcodes scanned on a Honeywell CT45 and lists them on your computer.",
+  "type": "module",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.mjs\"",
+    "e2e": "node scripts/e2e.mjs",
+    "android-e2e": "node scripts/android-e2e.mjs",
+    "fake-scanner": "node scripts/fake-scanner.mjs",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.henokabraham.ct45tracker",
+    "productName": "CT45 Tracker",
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "src/**",
+      "ui/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "CT45 Tracker types scanned barcodes into the app you're using."
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

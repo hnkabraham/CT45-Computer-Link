@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CT45 Tracker</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>CT45 Tracker</h1>
+    <p id="connection" class="connection" role="status"><span class="dot"></span><span id="connection-text">Starting…</span></p>
+  </header>
+
+  <div class="layout">
+    <aside class="side">
+      <section class="panel" aria-labelledby="pair-title">
+        <div id="devices" hidden>
+          <h2>Connected</h2>
+          <ul id="device-list" class="device-list"></ul>
+        </div>
+
+        <details id="pair" open>
+          <summary id="pair-title"><h2>Connect a scanner</h2></summary>
+          <div class="pair-body">
+            <img id="qr" class="qr" alt="Pairing QR code">
+            <p class="pair-help">Open <strong>CT45 Tracker</strong> on the CT45 and scan this code with the scan button.</p>
+            <p class="pair-address"><span id="pair-address"></span></p>
+            <p id="no-network" class="warn" hidden>This computer isn't on a network. Connect it to the same Wi-Fi as the CT45.</p>
+            <div class="pair-actions">
+              <button id="copy-link" class="btn small" type="button">Copy pairing link</button>
+              <button id="new-code" class="btn small" type="button">New pairing code</button>
+            </div>
+            <p id="new-code-confirm" class="confirm" hidden>
+              Scanners already paired will need to scan the new code.
+              <span class="confirm-actions">
+                <button id="new-code-yes" class="btn small danger" type="button">Make new code</button>
+                <button id="new-code-no" class="btn small" type="button">Cancel</button>
+              </span>
+            </p>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel" aria-labelledby="typing-title">
+        <h2 id="typing-title">Type into other apps</h2>
+        <label class="switch-row">
+          <span>Type each scan where your cursor is</span>
+          <input id="typing" type="checkbox" role="switch">
+        </label>
+        <fieldset id="suffix" class="suffix">
+          <legend>After each scan, press</legend>
+          <label><input type="radio" name="suffix" value="enter"> Enter</label>
+          <label><input type="radio" name="suffix" value="tab"> Tab</label>
+          <label><input type="radio" name="suffix" value="none"> Nothing</label>
+        </fieldset>
+        <p id="typing-unsupported" class="muted small" hidden>Typing into other apps works on macOS and Windows.</p>
+        <p id="typing-status" class="muted small" hidden></p>
+        <div id="permission" class="warn" hidden>
+          <p>macOS blocked typing. In <strong>System Settings → Privacy &amp; Security → Accessibility</strong>, turn on CT45 Tracker. If macOS asks to let it control System Events, click OK.</p>
+          <button id="open-accessibility" class="btn small" type="button">Open Accessibility settings</button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <label class="search">
+          <span class="visually-hidden">Search scans</span>
+          <input id="search" type="search" placeholder="Search scans" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="toolbar-actions">
+          <button id="copy-all" class="btn" type="button">Copy all</button>
+          <button id="export" class="btn primary" type="button">Export CSV</button>
+          <button id="clear" class="btn" type="button">Clear</button>
+        </div>
+      </div>
+      <p id="clear-confirm" class="confirm" hidden>
+        <span id="clear-question"></span>
+        <span class="confirm-actions">
+          <button id="clear-yes" class="btn small danger" type="button">Clear</button>
+          <button id="clear-no" class="btn small" type="button">Cancel</button>
+        </span>
+      </p>
+
+      <p id="count" class="count"></p>
+
+      <div id="empty" class="empty" hidden>
+        <p class="empty-title">No scans yet</p>
+        <p class="muted">Scan a barcode with the CT45 and it shows up here.</p>
+      </div>
+
+      <table id="table" class="scans" hidden>
+        <thead>
+          <tr><th scope="col">Time</th><th scope="col">Barcode</th><th scope="col">Type</th><th scope="col">Device</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="truncated" class="muted small" hidden></p>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
