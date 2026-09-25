@@ -87,7 +87,8 @@ async function launch() {
   });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d));
-  const end = Date.now() + 20_000;
+  // A first Rosetta launch may need time to translate the packaged Intel framework.
+  const end = Date.now() + 60_000;
   while (Date.now() < end) {
     try {
       const targets = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json`)).json();

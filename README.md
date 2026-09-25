@@ -30,7 +30,7 @@ Download the matching files from [Releases](https://github.com/hnkabraham/CT45-C
 3. Connect both devices to the same local network. Open the Android app and use the CT45’s scan button to scan the computer’s QR code.
 4. Wait for **Connected**, then scan a barcode. No account or cloud service is needed.
 
-The desktop installers are **not signed with a verified publisher certificate or notarized**. macOS and Windows may require an explicit first-run approval. Only approve the app if you trust its source; `SHA256SUMS.txt` in the release lets you check download integrity. On macOS, try **System Settings → Privacy & Security → Open Anyway** after opening the app. If macOS instead reports the downloaded app as damaged, remove its quarantine attribute only after verifying the download:
+The Mac apps use ad-hoc signatures for integrity; they are **not signed with an Apple Developer ID or notarized**. The Windows installer has no verified publisher signature. macOS and Windows may require an explicit first-run approval. Only approve the app if you trust its source; `SHA256SUMS.txt` in the release lets you check download integrity. On macOS, try **System Settings → Privacy & Security → Open Anyway** after opening the app. If macOS instead reports the downloaded app as damaged, remove its quarantine attribute only after verifying the download:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/CT45 Computer Link.app"

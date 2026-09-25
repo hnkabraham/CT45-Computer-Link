@@ -52,7 +52,7 @@
         }
       ],
       "category": "public.app-category.productivity",
-      "identity": null,
+      "identity": "-",
       "extendInfo": {
         "NSAppleEventsUsageDescription": "CT45 Computer Link types scanned barcodes into the app you're using."
       }

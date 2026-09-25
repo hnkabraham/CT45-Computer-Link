@@ -43,7 +43,7 @@ npm run dist:win
 CT45_APP='dist/mac-arm64/CT45 Computer Link.app/Contents/MacOS/CT45 Computer Link' npm run e2e
 ```
 
-The current installers have no verified publisher signing or Apple notarization. They require the first-run steps in the README. Adding those later requires the maintainer's Apple Developer ID and/or Windows signing credentials; Android signing does not sign desktop installers.
+Mac apps use ad-hoc code signatures (`identity: "-"`) so their nested frameworks pass integrity checks. The current installers have no verified publisher signing or Apple notarization. They require the first-run steps in the README. Adding those later requires the maintainer's Apple Developer ID and/or Windows signing credentials; Android signing does not sign desktop installers.
 
 Upload only the three installers, the signed release APK, and `SHA256SUMS.txt`. Normalize asset names to `CT45-Computer-Link-VERSION-mac-arm64.dmg`, `-mac-x64.dmg`, and `-windows-x64.exe`. Keep private keys, debug APKs, test fixtures, and build caches out of release assets. Use a release tag pointing at the exact tested commit and verify uploaded checksums.
 
