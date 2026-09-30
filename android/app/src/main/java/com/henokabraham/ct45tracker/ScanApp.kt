@@ -20,6 +20,8 @@ class ScanApp : Application() {
         private set
     lateinit var scanner: HoneywellScanner
         private set
+    lateinit var feedback: ScanFeedback
+        private set
 
     // The last scan from the scanner, so a keyboard-wedge copy typed into the text box can be
     // recognised and dropped.
@@ -35,6 +37,7 @@ class ScanApp : Application() {
         super.onCreate()
         prefs = getSharedPreferences("ct45tracker", MODE_PRIVATE)
         log = ScanLog(prefs)
+        feedback = ScanFeedback(this, prefs, log)
         var saveFailed = false
         log.addListener {
             if (log.hasSaveError && !saveFailed) Toast.makeText(this, R.string.storage_error_detail, Toast.LENGTH_LONG).show()
@@ -75,7 +78,9 @@ class ScanApp : Application() {
             return false
         }
         link.start()
-        log.add(Protocol.Scan(UUID.randomUUID().toString(), data, System.currentTimeMillis(), aimId, codeId, link.session.id, link.session.name))
+        val scan = Protocol.Scan(UUID.randomUUID().toString(), data, System.currentTimeMillis(), aimId, codeId, link.session.id, link.session.name)
+        feedback.capture(scan.id)
+        log.add(scan)
         return true
     }
 

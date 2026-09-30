@@ -25,7 +25,13 @@ async function until(fn, label, timeout = 30000) {
 }
 function check(label, ok) { if (!ok) throw new Error(`FAIL ${label}`); console.log(`PASS ${label}`); }
 function screen() {
-  const xml = adb('exec-out', 'uiautomator', 'dump', '/dev/tty');
+  // Android can briefly return a null accessibility root during a window transition.
+  let xml = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    xml = adb('exec-out', 'uiautomator', 'dump', '/dev/tty');
+    if (xml.includes('<hierarchy')) break;
+  }
+  if (!xml.includes('<hierarchy')) throw new Error('Android accessibility snapshot unavailable');
   return [...xml.matchAll(/<node [^>]*>/g)].map(([tag]) => {
     const attr = (name) => tag.match(new RegExp(`${name}="([^"]*)"`))?.[1] || '';
     const b = attr('bounds').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
@@ -96,13 +102,19 @@ try {
   tapId('session_mode');
   check('shared-session effect is explained', screen().some((n) => n.text.includes('every scanner')));
   tapText('Warehouse count'); tapText('Change session');
-  await until(() => active.id === 'warehouse' && ui('status_detail').includes('Warehouse count'), 'remote session selection');
+  await until(() => active.id === 'warehouse' && ui('session_label').includes('Warehouse count'), 'remote session selection');
   scan('IN-WAREHOUSE');
   await until(() => received.some((s) => s.data === 'IN-WAREHOUSE'), 'scan after session change');
   check('handheld selects the session for new scans', received.find((s) => s.data === 'IN-WAREHOUSE').sessionId === 'warehouse');
 
   await server.close(); server = null;
   await until(() => ui('status_title').startsWith("Can't reach"), 'offline state');
+  check('disabled session selection explains why', ui('session_hint').includes('Connect to the computer'));
+  tapId('connection_help');
+  check('network help includes USB forwarding', screen().some((n) => n.text.includes('adb reverse')));
+  shell('input', 'keyevent', 'KEYCODE_BACK');
+  tapId('retry_now');
+  await until(() => ui('status_title').startsWith("Can't reach"), 'manual retry returns to offline state');
   scan('WAITING-KEEP'); scan('WAITING-DISCARD');
   await until(() => ui('waiting_status').includes('2 scans'), 'separate waiting count');
   tap((n) => n.id === 'data' && n.text === 'WAITING-DISCARD');
@@ -120,6 +132,9 @@ try {
   await until(() => ui('status_title') === 'Choose a connection', 'guided connection choice');
   check('missing Bluetooth endpoint offers an action instead of a false retry', !ui('status_detail').includes('Retrying automatically') && !!ui('use_network'));
   screenshot('ct45-android-connection-recovery');
+  tapId('connection_help');
+  check('Bluetooth help explains permissions and desktop support', screen().some((n) => n.text.includes('Nearby devices') && n.text.includes('Windows')));
+  shell('input', 'keyevent', 'KEYCODE_BACK');
   tapId('use_network');
   await until(() => ui('status_title') === 'Connected to Demo Computer', 'guided network reconnection');
   const since = server.devices()[0].since;
@@ -132,7 +147,21 @@ try {
   await until(() => ui('status_title') === 'Connected to Demo Computer', 'gallery connection');
   for (const data of ['0000123456789', '12345678901234567890', 'BIN-A-0042']) scan(data);
   await until(() => ui('last_scan_meta').includes(' · Sent ·'), 'gallery acknowledgements');
+  check('compact view keeps the session and scans prominent', ui('session_label').includes('Warehouse count') && !screen().some((n) => n.id === 'background'));
   await sleep(3000); screenshot('ct45-android-connected');
+  tapId('settings_toggle');
+  check('scanning settings disclose feedback off by default', ui('feedback_mode').endsWith('Off') && screen().some((n) => n.id === 'background'));
+  screenshot('ct45-android-settings');
+  tapId('feedback_mode');
+  check('feedback explains received versus saved waiting', screen().some((n) => n.text.includes('Received by computer') && n.text.includes('still waiting')));
+  screenshot('ct45-android-feedback');
+  tapText('Vibration');
+  check('feedback choice is reflected in settings', ui('feedback_mode').endsWith('Vibration'));
+  shell('am', 'force-stop', PKG); launch();
+  await until(() => ui('status_title') === 'Connected to Demo Computer', 'reconnect after feedback preference restart');
+  tapId('settings_toggle');
+  check('feedback preference survives restart', ui('feedback_mode').endsWith('Vibration'));
+  tapId('feedback_mode'); tapText('Off'); tapId('settings_toggle');
   tapId('connection_mode'); screenshot('ct45-android-connection-options'); shell('input', 'keyevent', 'KEYCODE_BACK');
   tapId('session_mode'); screenshot('ct45-android-sessions'); shell('input', 'keyevent', 'KEYCODE_BACK');
   shell('cmd', 'uimode', 'night', 'yes'); launch(); await sleep(2000); screenshot('ct45-android-dark');

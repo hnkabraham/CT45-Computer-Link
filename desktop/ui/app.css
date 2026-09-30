@@ -237,6 +237,7 @@ tr:hover .copy-scan, .copy-scan:focus-visible { opacity: 1; }
 
 .empty { text-align: center; padding: 64px 16px; }
 .empty-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+#clear-search { margin-top: 16px; }
 
 .scans {
   width: 100%;

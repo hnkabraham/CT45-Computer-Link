@@ -2,9 +2,21 @@
 
 Status on September 30, 2026: **development candidate; full physical-device acceptance remains incomplete**. The stable public download is still version 2.0.0.
 
-## September 30 product and design improvements
+## September 30 final UX refinements
 
-The current development build adds local queue actions, guided connection recovery, handheld session selection, exact repeated-barcode markers, visible Copy buttons, and clearer connection labels. It rejects oversized input without truncation and recovers invalid entries saved by older versions. Android status and history scroll together on short screens while manual barcode entry stays accessible. The pairing panel puts Copy pairing link before the Bluetooth controls and keeps token revocation secondary.
+The newest build adds an actionable empty search view, explanations for disabled session selection, route-specific connection help with settings shortcuts, a manual retry that preserves pairing and Bluetooth registration limits, a compact scanning view, and optional delivery feedback. The background notification no longer promises screen-lock behavior.
+
+- All 43 desktop unit/integration tests and 27 Android unit tests passed. The feedback tests cover acknowledgement-only receipt signals, durable waiting scans, later receipt, duplicate/restored history, discarded/rejected entries, expiry, and grouped outcomes.
+- All 44 source desktop end-to-end checks passed, including no-match search recovery and appropriately disabled copy/export controls. This run did not enable Bluetooth.
+- All 22 Android workflow checks passed on a disposable Android 13 emulator, including connection help, disabled-session explanations, compact settings, feedback choices and preference persistence, exact Copy/paste, and accessible input and queue actions at 720×1280. The emulator screenshot gallery was refreshed and visually inspected.
+- Android debug/release builds and lint passed with zero errors and seven existing warnings. The release APK was signed with the existing key lineage and signature/alignment verification passed.
+- Both Mac DMGs and the Windows x64 installer built. Packaged runtime and Bluetooth checks were not repeated for this refinement; the earlier results below remain separate evidence.
+
+Physical testing is deferred at the owner’s request. In particular, sound, vibration, silent/Do Not Disturb behavior, and the new controls still need checking on the CT45. Emulated UI checks cannot establish those hardware behaviors. The overnight automation remains paused, the stable release remains 2.0.0, and no physical device settings were changed for these refinements.
+
+## Earlier September 30 product and design improvements (9e8a65d)
+
+That commit added local queue actions, guided connection recovery, handheld session selection, exact repeated-barcode markers, visible Copy buttons, and clearer connection labels. It rejects oversized input without truncation and recovers invalid entries saved by older versions. Android status and history scroll together on short screens while manual barcode entry stays accessible. The pairing panel puts Copy pairing link before the Bluetooth controls and keeps token revocation secondary.
 
 | Check | Result |
 |---|---|
@@ -17,9 +29,9 @@ The current development build adds local queue actions, guided connection recove
 | Visual checks | Light/dark Android and desktop screens, session/queue dialogs, guided recovery, a 420px desktop window, and a 720×1280 Android layout inspected |
 | Pending-text contrast | Light amber changed from `#B26A00` (4.24:1 on white) to `#8A5300` (6.33:1 on white, 5.85:1 on the page background); dark amber is 9.07:1 on its surface. Ratios calculated from sRGB relative luminance. |
 
-The current Android workflows were exercised on a disposable Android 13 emulator against the production desktop TLS server. A saved 70,000-character entry was rejected locally and the following valid scan delivered. New 8,193-character input was rejected without disconnecting. A 101-character device name connected with a bounded hello name. Session selection changed the desktop session; waiting scans retained their original session. Confirmed local discard survived restart and prevented retry of that record. A pairing without Bluetooth offered a working network switch, and reselecting the active transport preserved the connection.
+Those Android workflows were exercised on a disposable Android 13 emulator against the production desktop TLS server. A saved 70,000-character entry was rejected locally and the following valid scan delivered. New 8,193-character input was rejected without disconnecting. A 101-character device name connected with a bounded hello name. Session selection changed the desktop session; waiting scans retained their original session. Confirmed local discard survived restart and prevented retry of that record. A pairing without Bluetooth offered a working network switch, and reselecting the active transport preserved the connection.
 
-The emulator's barcode input is synthetic. The current APK has **not** been installed or tested on the physical CT45, and the current Intel package has not been rerun under Rosetta. The historical radio evidence below applies to the earlier Bluetooth build. The overnight automation remains paused. Screenshots and reproducible test commands are in the [gallery](images/v2.1/README.md) and [README](../README.md).
+The emulator's barcode input is synthetic. Neither that APK nor the latest refinement has been installed or tested on the physical CT45, and the updated Intel packages have not been rerun under Rosetta. The historical radio evidence below applies to the earlier Bluetooth build. The overnight automation remains paused. Screenshots and reproducible test commands are in the [gallery](images/v2.1/README.md) and [README](../README.md).
 
 ## Earlier Bluetooth build and hardware tests
 

@@ -6,11 +6,14 @@ import android.app.AlertDialog
 import android.content.SharedPreferences
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.net.Uri
+import android.provider.Settings
 import android.text.format.DateFormat
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -39,6 +42,14 @@ class MainActivity : Activity() {
     private lateinit var waitingStatus: TextView
     private lateinit var sessionMode: Button
     private lateinit var sessionError: TextView
+    private lateinit var sessionHint: TextView
+    private lateinit var sessionLabel: TextView
+    private lateinit var retryNow: Button
+    private lateinit var connectionActions: View
+    private lateinit var settingsToggle: Button
+    private lateinit var settingsPanel: View
+    private lateinit var feedbackMode: Button
+    private var settingsExpanded = false
     private lateinit var useNetwork: Button
     private lateinit var scannerMissing: TextView
     private lateinit var storageWarning: TextView
@@ -51,13 +62,14 @@ class MainActivity : Activity() {
 
     private val renderListener = { render() }
     // "Turn off" in the notification changes the setting while this screen may be showing.
-    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        background.isChecked = app.background
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key in setOf("background", "compactScanning", "deliveryFeedback")) render()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        settingsExpanded = savedInstanceState?.getBoolean("settingsExpanded") ?: false
         val recent = findViewById<ListView>(R.id.recent)
         val header = layoutInflater.inflate(R.layout.scan_header, recent, false)
         recent.addHeaderView(header, null, false)
@@ -68,6 +80,17 @@ class MainActivity : Activity() {
         waitingStatus = header.findViewById(R.id.waiting_status)
         sessionMode = header.findViewById(R.id.session_mode)
         sessionError = header.findViewById(R.id.session_error)
+        sessionHint = header.findViewById(R.id.session_hint)
+        sessionLabel = header.findViewById(R.id.session_label)
+        retryNow = header.findViewById(R.id.retry_now)
+        connectionActions = header.findViewById(R.id.connection_actions)
+        retryNow.setOnClickListener { app.link.retryNow() }
+        header.findViewById<Button>(R.id.connection_help).setOnClickListener { showConnectionHelp() }
+        settingsToggle = header.findViewById(R.id.settings_toggle)
+        settingsPanel = header.findViewById(R.id.settings_panel)
+        settingsToggle.setOnClickListener { settingsExpanded = !settingsExpanded; render() }
+        feedbackMode = header.findViewById(R.id.feedback_mode)
+        feedbackMode.setOnClickListener { chooseFeedback() }
         useNetwork = header.findViewById(R.id.use_network)
         useNetwork.setOnClickListener { app.link.useBluetooth(false) }
         sessionMode.setOnClickListener { chooseSession() }
@@ -110,7 +133,19 @@ class MainActivity : Activity() {
         }
         connectionMore.setOnClickListener {
             PopupMenu(this, connectionMore).apply {
-                menu.add(R.string.unpair).setOnMenuItemClickListener { confirmUnpair(); true }
+                menu.add(R.string.connection_help).setOnMenuItemClickListener { showConnectionHelp(); true }
+                menu.add(R.string.delivery_feedback).setOnMenuItemClickListener { chooseFeedback(); true }
+                menu.add(R.string.compact_scanning).apply {
+                    isCheckable = true
+                    isChecked = compactScanning
+                    setOnMenuItemClickListener {
+                        app.prefs.edit().putBoolean("compactScanning", !compactScanning).apply()
+                        settingsExpanded = false
+                        render()
+                        true
+                    }
+                }
+                if (app.link.pairing != null) menu.add(R.string.unpair).setOnMenuItemClickListener { confirmUnpair(); true }
                 show()
             }
         }
@@ -136,6 +171,54 @@ class MainActivity : Activity() {
         app.link.removeListener(renderListener)
         app.prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         super.onStop()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("settingsExpanded", settingsExpanded)
+        super.onSaveInstanceState(outState)
+    }
+
+    private val compactScanning get() = app.prefs.getBoolean("compactScanning", true)
+
+    private fun openSettings(action: String, appDetails: Boolean = false) {
+        try { startActivity(Intent(action).apply { if (appDetails) data = Uri.parse("package:$packageName") }) }
+        catch (_: RuntimeException) { Toast.makeText(this, R.string.settings_unavailable, Toast.LENGTH_LONG).show() }
+    }
+
+    private fun showConnectionHelp() {
+        val bluetooth = app.link.bluetoothMode
+        val introduction = when (app.link.status) {
+            DesktopLink.Status.NotPaired -> getString(R.string.status_not_paired_detail)
+            DesktopLink.Status.PairingExpired -> getString(R.string.status_expired_detail)
+            DesktopLink.Status.NeedsNetwork -> getString(R.string.connection_action_detail)
+            else -> ""
+        }
+        val detail = getString(if (bluetooth) R.string.help_bluetooth else R.string.help_network)
+        AlertDialog.Builder(this).setTitle(R.string.connection_help)
+            .setMessage(listOf(introduction, detail).filter { it.isNotEmpty() }.joinToString("\n\n"))
+            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(R.string.app_settings) { _, _ -> openSettings(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, true) }
+            .setNeutralButton(if (bluetooth) R.string.bluetooth_settings else R.string.wifi_settings) { _, _ ->
+                openSettings(if (bluetooth) Settings.ACTION_BLUETOOTH_SETTINGS else Settings.ACTION_WIFI_SETTINGS)
+            }.show()
+    }
+
+    private val feedbackLabels get() = arrayOf(R.string.feedback_off, R.string.feedback_vibrate, R.string.feedback_sound, R.string.feedback_both)
+
+    private fun chooseFeedback() {
+        AlertDialog.Builder(this)
+            .setCustomTitle(TextView(this).apply {
+                text = getString(R.string.feedback_title)
+                setTextColor(getColor(R.color.text))
+                val padding = (16 * resources.displayMetrics.density).toInt()
+                setPadding(padding, padding, padding, padding / 2)
+                textSize = 14f
+            })
+            .setSingleChoiceItems(feedbackLabels.map { getString(it) }.toTypedArray(), app.feedback.mode.ordinal) { dialog, which ->
+                app.feedback.mode = ScanFeedback.Mode.entries[which]
+                render()
+                dialog.dismiss()
+            }.setNegativeButton(R.string.cancel, null).show()
     }
 
     // Without background mode, the scanner is claimed only while this screen is in front, so
@@ -238,8 +321,29 @@ class MainActivity : Activity() {
 
     private fun render() {
         val link = app.link
+        background.isChecked = app.background
+        val compact = compactScanning
+        val showSettings = !compact || settingsExpanded
+        settingsPanel.visibility = if (showSettings) View.VISIBLE else View.GONE
+        settingsToggle.visibility = if (compact) View.VISIBLE else View.GONE
+        settingsToggle.text = getString(if (showSettings) R.string.hide_scanning_settings else R.string.scanning_settings)
+        feedbackMode.text = getString(R.string.feedback_setting, getString(feedbackLabels[app.feedback.mode.ordinal]))
         connectionMode.contentDescription = getString(R.string.change_connection) + ": " + getString(if (link.bluetoothMode) R.string.connection_bluetooth else R.string.connection_network)
         sessionMode.isEnabled = link.canSelectSession
+        val sessionHintText = when {
+            link.status !is DesktopLink.Status.Connected -> R.string.session_offline
+            !link.supportsSessionSelection -> R.string.session_unsupported
+            link.sessionSelectionPending -> R.string.session_changing
+            link.availableSessions.isEmpty() -> R.string.session_empty
+            else -> null
+        }
+        sessionHint.text = sessionHintText?.let { getString(it) }.orEmpty()
+        sessionHint.visibility = if (sessionHintText == null) View.GONE else View.VISIBLE
+        sessionLabel.text = getString(R.string.current_session, link.session.name)
+        connectionActions.visibility = if (link.status is DesktopLink.Status.Connected) View.GONE else View.VISIBLE
+        retryNow.visibility = if (link.status is DesktopLink.Status.Retrying || link.status is DesktopLink.Status.Connecting) View.VISIBLE else View.GONE
+        retryNow.isEnabled = link.status is DesktopLink.Status.Retrying
+        retryNow.text = getString(if (link.status is DesktopLink.Status.Connecting) R.string.retry_connecting else R.string.retry_now)
         sessionError.text = link.sessionSelectionError.orEmpty()
         sessionError.visibility = if (link.sessionSelectionError == null) View.GONE else View.VISIBLE
         useNetwork.visibility = if (link.status is DesktopLink.Status.NeedsNetwork) View.VISIBLE else View.GONE
@@ -261,11 +365,11 @@ class MainActivity : Activity() {
         }
         statusDot.backgroundTintList = ColorStateList.valueOf(getColor(color))
         statusTitle.text = title
-        statusDetail.text = detail
+        statusDetail.text = if (compact && link.status is DesktopLink.Status.Connected)
+            getString(R.string.connection_compact, getString(if (link.bluetoothMode) R.string.connection_bluetooth else R.string.connection_network))
+            else detail
         waitingStatus.text = waitingText
         waitingStatus.visibility = if (waitingText.isEmpty()) View.GONE else View.VISIBLE
-        statusDetail.append("\n" + getString(R.string.current_session, link.session.name))
-        connectionMore.visibility = if (link.pairing != null) View.VISIBLE else View.GONE
         storageWarning.visibility = if (app.log.hasSaveError) View.VISIBLE else View.GONE
 
         val latest = app.log.state.scans.firstOrNull()

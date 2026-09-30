@@ -6,7 +6,7 @@ All barcodes and scanner names shown here are synthetic examples. The desktop sc
 
 ## Desktop
 
-Captured from the packaged Apple silicon macOS app. The scan list uses a simulated scanner. The pairing screen shows Bluetooth ready on the Mac; it does not show a connected Bluetooth scanner.
+Captured from the Electron desktop app running the current source on macOS. The scan list uses a simulated scanner. The pairing screen offers Bluetooth setup; no Bluetooth scanner is connected in these captures.
 
 ### Pairing and Bluetooth setup
 
@@ -30,6 +30,10 @@ Captured from the packaged Apple silicon macOS app. The scan list uses a simulat
 
 ![Repeated barcodes marked Seen N times, with visible Copy buttons](ct45-desktop-repeats.png)
 
+### Search with no matches
+
+![Empty search results with a Clear search action](ct45-desktop-no-matches.png)
+
 ## Android
 
 Captured from the current 2.1.0 debug build on an Android 13 emulator, not the physical CT45. The emulator has no Honeywell scanner, so its scanner warning is visible. The connected views use a real pinned TLS connection to a temporary local server; barcode input is simulated. The connection menu illustrates the Bluetooth option, not a Bluetooth connection from the emulator.
@@ -41,6 +45,10 @@ Captured from the current 2.1.0 debug build on an Android 13 emulator, not the p
 | Connection choices | Saved scan waiting to send |
 |---|---|
 | <img src="ct45-android-connection-options.png" alt="Android connection method dialog offering Wi-Fi or USB and Bluetooth" width="300"> | <img src="ct45-android-waiting.png" alt="Android emulator with one saved scan waiting after the demo computer disconnects" width="300"> |
+
+| Expanded scanning settings | Optional delivery feedback |
+|---|---|
+| <img src="ct45-android-settings.png" alt="Scanning settings reveal background mode and delivery feedback, off by default" width="300"> | <img src="ct45-android-feedback.png" alt="Delivery feedback choices explain computer receipt versus saved scans still waiting" width="300"> |
 
 | Shared session selection | Waiting scan actions |
 |---|---|

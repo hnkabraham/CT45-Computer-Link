@@ -108,10 +108,16 @@ function renderScans() {
   const list = filteredScans();
   const q = $('search').value.trim();
   $('count').textContent = q ? `${plural(list.length, 'match', 'matches')} of ${plural(total, 'scan')}` : plural(total, 'scan');
-  $('count').hidden = total === 0;
-  $('empty').hidden = total > 0;
+  $('count').hidden = total === 0 && !q;
+  $('empty').hidden = list.length > 0;
+  $('empty-title').textContent = q ? 'No matching scans' : viewId ? 'No scans in this session' : 'No scans yet';
+  $('empty-hint').textContent = q ? 'Try another search or clear it to see the scans in this view.'
+    : viewId ? 'Choose this session under Scanning into to add scans, or show another session.'
+    : 'Scan a barcode with the CT45 and it shows up here.';
+  $('clear-search').hidden = !q;
   $('table').hidden = list.length === 0;
-  for (const id of ['copy-all', 'export', 'export-csv', 'clear']) $(id).disabled = total === 0;
+  for (const id of ['copy-all', 'export', 'export-csv']) $(id).disabled = list.length === 0;
+  $('clear').disabled = total === 0;
 
   const shown = list.slice(0, MAX_ROWS);
   const repeats = repeatedBarcodes(state.scans);
@@ -204,6 +210,7 @@ $('rows').addEventListener('click', async (e) => {
 });
 
 $('search').addEventListener('input', renderScans);
+$('clear-search').addEventListener('click', () => { $('search').value = ''; renderScans(); $('search').focus(); });
 
 $('copy-all').addEventListener('click', async () => {
   const list = filteredScans();

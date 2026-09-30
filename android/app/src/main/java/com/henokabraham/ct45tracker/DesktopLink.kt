@@ -73,7 +73,8 @@ class DesktopLink(
     var sessionSelectionError: String? = null
         private set
     private var sessionRequest: String? = null
-    val canSelectSession get() = status is Status.Connected && supportsSessionSelection && sessionRequest == null
+    val sessionSelectionPending get() = sessionRequest != null
+    val canSelectSession get() = status is Status.Connected && supportsSessionSelection && availableSessions.isNotEmpty() && !sessionSelectionPending
     private val sessionOverdue = Runnable {
         sessionRequest = null
         sessionSelectionError = "No reply about the session. Check the current session, then try again."
@@ -167,6 +168,11 @@ class DesktopLink(
             main.removeCallbacks(retry)
             connect()
         }
+    }
+
+    /** Manual retry preserves pairing, queued scans and Bluetooth's registration spacing. */
+    fun retryNow() {
+        if (status is Status.Retrying) nudge()
     }
 
     fun pair(candidate: Protocol.Pairing): Boolean {

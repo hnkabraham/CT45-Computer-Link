@@ -8,6 +8,8 @@ The development version adds **encrypted Bluetooth for macOS and Android 10+**. 
 
 It also adds handheld session selection, copying and locally discarding waiting scans, repeated-barcode markers, clearer connection recovery, and visible desktop Copy buttons. These improvements are included in the development branch, not the stable download.
 
+The development Android app opens in a compact scanning view. **Scanning settings** reveals background scanning and optional delivery feedback; **More → Compact scanning view** switches to the full view. The session, latest scan, and waiting count remain visible. **Connection help** explains the selected route, and **Retry now** starts an earlier reconnect without changing pairing or switching routes.
+
 [View the v2.1 desktop and Android UI screenshots](docs/images/v2.1/README.md).
 
 ![Named scanning session on the desktop](docs/images/desktop.png)
@@ -75,6 +77,10 @@ Tap a recent Android scan to **Copy barcode**. A saved scan still marked **Waiti
 
 On the development desktop, **Seen N×** marks repeated exact barcode text within the same session. Every intentional scan remains in the log and exports; retransmissions with the same scan ID are still deduplicated. Use a row’s **Copy** button with a mouse or keyboard. Connected-device labels distinguish Bluetooth, Network, and Local connection; the address remains in a tooltip. Local connection alone does not identify USB.
 
+Searches with no results show **No matching scans** and **Clear search**, which keeps the selected session. Copy/export are disabled for an empty result; **Clear** still acts on the selected session and asks for confirmation. Android explains when session changes require a connection, a desktop update, or an outstanding request to finish.
+
+**Delivery feedback** is off by default. Choose vibration, sound, or both in Android’s scanning settings or More menu. Computer acknowledgement produces one short vibration and a confirmation tone; a scan saved locally and still waiting after about 1.5–2.5 seconds produces two vibrations and a different tone. Only the chosen feedback types play, and system silent/Do Not Disturb settings take priority. Feedback covers captures from the last minute, groups fast scans, and ignores restored history and duplicate acknowledgements. The Honeywell capture beep is separate. Sound/vibration behavior on the physical CT45 still needs testing.
+
 **Type into other apps** sends new scans to the app containing your cursor. The desktop does not type while its own window is active, or when a scan waited more than 60 seconds before sending. Delayed scans still appear in the log. On macOS, grant Accessibility permission and allow System Events when asked. Windows cannot type into an app running as administrator.
 
 On the CT45, **Keep running in the background** keeps the scanner claimed while another app or the lock screen is visible, with a persistent notification. Turn it off to return the scanner to other apps. Screen-off scanning depends on the device’s Honeywell firmware and scan-button settings. Pairing QR codes are accepted only while this app is on screen.
@@ -139,6 +145,6 @@ OLD_APK=/path/to/CT45-Computer-Link-1.0.0-debug.apk \
 
 The release test installs v1, upgrades to the signed v2 APK, and checks preserved scans, certificate rejection, offline sessions, and discovery at a new endpoint. The emulator must start without this app installed. mDNS testing needs a network that carries discovery traffic.
 
-The polish test reinstalls the debug app on the selected disposable emulator, then checks oversized queue recovery, session selection, local discard persistence, and guided connection recovery. Set `SCREENSHOT_DIR` to save synthetic UI examples. It does not test Bluetooth radio delivery or Honeywell optics.
+The polish test reinstalls the debug app on the selected disposable emulator, then checks oversized queue recovery, session selection, local discard persistence, connection help, compact layouts, and feedback preferences. Set `SCREENSHOT_DIR` to save synthetic UI examples. It does not test Bluetooth radio delivery, Honeywell optics, or physical sound/vibration behavior.
 
 **Validation limits:** automated tests and emulator checks do not replace testing a physical CT45, Windows, or a particular corporate Wi-Fi network. macOS installers are built for both architectures; Windows is cross-built. See the release notes for the exact checks performed.

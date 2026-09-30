@@ -166,6 +166,12 @@ try {
   check('search filters', (await cdp.eval(rows)) === 1 && (await cdp.eval(text('count'))) === '1 match of 4 scans');
   await cdp.eval('const s3 = document.getElementById("search"); s3.value = "01"; s3.dispatchEvent(new Event("input")); true');
   check('several matches read correctly', (await cdp.eval(text('count'))) === '2 matches of 4 scans', await cdp.eval(text('count')));
+  await cdp.eval('const missing = document.getElementById("search"); missing.value = "NO-MATCH-TEST"; missing.dispatchEvent(new Event("input")); true');
+  check('unmatched search explains the empty view', await cdp.eval('!document.getElementById("empty").hidden && document.getElementById("empty-title").textContent === "No matching scans"'));
+  check('empty results disable copy and export without disabling session clear', await cdp.eval('["copy-all", "export", "export-csv"].every(id => document.getElementById(id).disabled) && !document.getElementById("clear").disabled'));
+  await cdp.screenshot('ct45-desktop-no-matches.png');
+  await cdp.eval('document.getElementById("clear-search").click(); true');
+  check('clear search restores scans and keyboard focus', (await cdp.eval(rows)) === 4 && await cdp.eval('document.activeElement.id === "search" && document.getElementById("empty").hidden'));
   await cdp.eval('const s2 = document.getElementById("search"); s2.value = ""; s2.dispatchEvent(new Event("input")); true');
 
   // Copy
