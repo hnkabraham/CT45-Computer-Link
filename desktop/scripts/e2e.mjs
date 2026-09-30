@@ -172,6 +172,7 @@ try {
   await cdp.eval('document.querySelector("#rows tr:nth-child(3)").click(); true');
   check('clicking a row copies it', await cdp.waitFor(`${text('toast')} === "Copied ABC-123"`));
 
+  if (shots) await sleep(2600); // Let the copy toast clear before documenting the interface.
   await cdp.screenshot('ct45-desktop-light.png');
   await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
   await sleep(200);

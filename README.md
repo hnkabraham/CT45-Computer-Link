@@ -6,6 +6,8 @@ Scan a barcode on a Honeywell CT45 and send it to your Mac or Windows computer. 
 
 The development version adds **encrypted Bluetooth for macOS and Android 10+**. It is not included in the v2.0.0 downloads above. Bluetooth hardware validation is in progress; see [Bluetooth setup and testing](docs/bluetooth.md).
 
+[View the v2.1 desktop and Android UI screenshots](docs/images/v2.1/README.md).
+
 ![Named scanning session on the desktop](docs/images/desktop.png)
 
 - **Pair once:** scan the computer’s QR code with the CT45.
