@@ -61,6 +61,9 @@ export function parseClientMessage(raw) {
 
 function checkMessage(m) {
   switch (m.type) {
+    case 'select-session':
+      if (!isShortString(m.sessionId, 64) || !isShortString(m.requestId, 64)) return { ok: false, error: 'invalid session selection' };
+      return { ok: true, msg: { type: m.type, sessionId: m.sessionId, requestId: m.requestId } };
     case 'hello':
       if (!isShortString(m.token, 128)) return { ok: false, error: 'hello needs a token' };
       if (!optionalString(m.device, 100)) return { ok: false, error: 'bad device name' };

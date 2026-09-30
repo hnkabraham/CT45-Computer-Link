@@ -1,6 +1,29 @@
-# Version 2.1 Bluetooth validation
+# Version 2.1 validation
 
 Status on September 30, 2026: **development candidate; full physical-device acceptance remains incomplete**. The stable public download is still version 2.0.0.
+
+## September 30 product and design improvements
+
+The current development build adds local queue actions, guided connection recovery, handheld session selection, exact repeated-barcode markers, visible Copy buttons, and clearer connection labels. It rejects oversized input without truncation and recovers invalid entries saved by older versions. Android status and history scroll together on short screens while manual barcode entry stays accessible. The pairing panel puts Copy pairing link before the Bluetooth controls and keeps token revocation secondary.
+
+| Check | Result |
+|---|---|
+| Desktop unit/integration tests | 43 passed, including authenticated session control, all-scanner broadcasts, session save failures, and exact repeat counts |
+| Android unit tests | 23 passed, including protocol compatibility, input limits, durable discard, failed discard writes, late acknowledgements, and discard retention |
+| Android workflow tests | All 14 checks passed on a disposable Android 13 emulator, including exact Copy/paste text, 48dp input/Send controls at 720×1280, and scrolling to queue actions |
+| Android debug/release builds and lint | Built successfully; no lint errors, seven existing warnings |
+| Packaged Apple silicon Mac app | All 46 end-to-end checks passed, including real helper startup, QR changes, toggling/persistence, repeat markers, Copy buttons, local labels, and handheld session selection |
+| Local build artifacts | Both Mac DMGs and the Windows x64 installer built; Android release APK signed with the existing key lineage and signature/alignment verification passed |
+| Visual checks | Light/dark Android and desktop screens, session/queue dialogs, guided recovery, a 420px desktop window, and a 720×1280 Android layout inspected |
+| Pending-text contrast | Light amber changed from `#B26A00` (4.24:1 on white) to `#8A5300` (6.33:1 on white, 5.85:1 on the page background); dark amber is 9.07:1 on its surface. Ratios calculated from sRGB relative luminance. |
+
+The current Android workflows were exercised on a disposable Android 13 emulator against the production desktop TLS server. A saved 70,000-character entry was rejected locally and the following valid scan delivered. New 8,193-character input was rejected without disconnecting. A 101-character device name connected with a bounded hello name. Session selection changed the desktop session; waiting scans retained their original session. Confirmed local discard survived restart and prevented retry of that record. A pairing without Bluetooth offered a working network switch, and reselecting the active transport preserved the connection.
+
+The emulator's barcode input is synthetic. The current APK has **not** been installed or tested on the physical CT45, and the current Intel package has not been rerun under Rosetta. The historical radio evidence below applies to the earlier Bluetooth build. The overnight automation remains paused. Screenshots and reproducible test commands are in the [gallery](images/v2.1/README.md) and [README](../README.md).
+
+## Earlier Bluetooth build and hardware tests
+
+These results precede the product/design changes above and are retained as historical evidence, not as acceptance of the current APK.
 
 | Check | Result |
 |---|---|
@@ -30,6 +53,7 @@ Still required before calling the Bluetooth release fully validated:
 - Restore temporary device test settings when ADB returns and complete an uninterrupted soak before claiming the six-hour check passed.
 - Manually scan an optical barcode using the Honeywell hardware trigger; synthetic broadcasts do not test the camera/laser or firmware trigger behavior.
 - Verify screen-off scanning when the owner can unlock the device again; Home-screen background checks do not establish screen-off behavior.
+- Verify the updated queue/session controls and keyboard behavior on the physical CT45, including returning to the app without the soft keyboard covering the scan history.
 
 Windows runtime, Windows Bluetooth, Android 10–12 Bluetooth, real Intel radio hardware, enterprise device policies, and radio range/interference have not been validated. Windows Bluetooth is not implemented. See [Bluetooth setup and testing](bluetooth.md) for reproducible commands and the distinction between the scan suite and connection-only soak.
 

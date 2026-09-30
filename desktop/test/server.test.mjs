@@ -163,3 +163,49 @@ test('moves to the next port when the preferred one is taken', async () => {
     blocker.close();
   }
 });
+
+test('authenticated session selection updates all scanners and preserves queued scan attribution', async () => {
+  const sessions = [{ id: 'a', name: 'Morning' }, { id: 'b', name: 'Afternoon' }];
+  let active = sessions[0];
+  let changed;
+  await withServer({ getSession: () => active, getSessions: () => sessions, onSelectSession: (id) => { active = sessions.find((s) => s.id === id); changed(); } }, async ({ server, scans }) => {
+    changed = server.sessionChanged;
+    const a = connect(server.port); const b = connect(server.port);
+    await Promise.all([a.opened, b.opened]);
+    a.send({ type: 'select-session', sessionId: 'b', requestId: 'before-hello' });
+    assert.equal((await a.next()).code, 'not-paired');
+    assert.equal(active.id, 'a');
+    for (const client of [a, b]) {
+      client.send({ type: 'hello', token: 'secret' });
+      const welcome = await client.next();
+      assert.deepEqual(welcome.sessions, sessions);
+      assert.deepEqual(welcome.capabilities, ['session-control']);
+    }
+    a.send({ type: 'select-session', sessionId: 'b', requestId: 'switch-1' });
+    assert.equal((await a.next((m) => m.type === 'session')).session.id, 'b');
+    assert.equal((await b.next()).session.id, 'b');
+    assert.deepEqual(await a.next(), { type: 'session-selected', requestId: 'switch-1' });
+    a.send({ type: 'scan', id: 'queued', data: '00001', scannedAt: 1, sessionId: 'a', sessionName: 'Morning' });
+    await a.next((m) => m.type === 'ack');
+    assert.equal(scans[0].sessionId, 'a');
+    a.send({ type: 'select-session', sessionId: 'missing', requestId: 'switch-2' });
+    const error = await a.next();
+    assert.equal(error.code, 'session-unavailable');
+    assert.equal(error.requestId, 'switch-2');
+    assert.equal(error.id, undefined);
+    assert.equal(active.id, 'b');
+    a.ws.close(); b.ws.close();
+  });
+});
+
+test('a failed session save reports the request failure without acknowledging or rejecting scans', () =>
+  withServer({ onSelectSession: () => { throw new Error('disk full'); } }, async ({ server }) => {
+    const c = connect(server.port); await c.opened;
+    c.send({ type: 'hello', token: 'secret' }); await c.next();
+    c.send({ type: 'select-session', sessionId: 'default', requestId: 'selection' });
+    const error = await c.next();
+    assert.equal(error.code, 'session-unavailable');
+    assert.equal(error.requestId, 'selection');
+    assert.equal(error.id, undefined);
+    c.ws.close();
+  }));

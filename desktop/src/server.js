@@ -19,6 +19,8 @@ export async function startServer({
   port,
   identity,
   getSession = () => ({ id: 'default', name: 'General' }),
+  getSessions = () => [getSession()],
+  onSelectSession = null,
   getToken,
   computerName,
   onScan,
@@ -44,6 +46,7 @@ export async function startServer({
   const devices = new Map(); // ws -> { device, address, since }
   const deviceList = () => [...devices.values()].sort((a, b) => a.since - b.since);
   const changed = () => onDevicesChanged(deviceList());
+  const sessionState = () => ({ session: getSession(), ...(onSelectSession && { sessions: getSessions(), capabilities: ['session-control'] }) });
 
   wss.on('connection', (ws, req) => {
     const address = (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
@@ -75,11 +78,24 @@ export async function startServer({
         }
         const transport = address === '127.0.0.1' && req.headers['x-ct45-transport'] === 'bluetooth' ? 'bluetooth' : 'network';
         devices.set(ws, { device: msg.device, address, transport, since: Date.now() });
-        send({ type: 'welcome', name: computerName(), version: PROTOCOL_VERSION, session: getSession() });
+        send({ type: 'welcome', name: computerName(), version: PROTOCOL_VERSION, ...sessionState() });
         return changed();
       }
 
       if (!devices.has(ws)) return send({ type: 'error', code: 'not-paired', message: 'Send hello first.' });
+
+      if (msg.type === 'select-session') {
+        if (!onSelectSession || !getSessions().some((s) => s.id === msg.sessionId)) {
+          return send({ type: 'error', code: 'session-unavailable', requestId: msg.requestId, message: 'This session is unavailable. Refresh the connection and try again.' });
+        }
+        try {
+          await onSelectSession(msg.sessionId);
+          send({ type: 'session-selected', requestId: msg.requestId });
+        } catch {
+          send({ type: 'error', code: 'session-unavailable', requestId: msg.requestId, message: 'The computer could not change the session. Try again.' });
+        }
+        return;
+      }
 
       if (msg.type === 'scan') {
         try {
@@ -111,7 +127,7 @@ export async function startServer({
     port: boundPort,
     devices: deviceList,
     sessionChanged() {
-      for (const ws of devices.keys()) if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'session', session: getSession() }));
+      for (const ws of devices.keys()) if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'session', ...sessionState() }));
     },
     // After a new pairing code, scanners holding the old one must re-pair.
     disconnectAll(code = CLOSE_REPAIRED, reason = 'pairing code changed') {

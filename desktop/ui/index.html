@@ -29,12 +29,15 @@
             <p class="secure-note">Encrypted · Reconnects automatically</p>
             <p class="pair-address"><span id="pair-address"></span></p>
             <p id="no-network" class="warn" hidden>No local network. Use Bluetooth, USB, or connect to the same Wi-Fi as the CT45.</p>
-            <div class="bluetooth-options">
-              <button id="bluetooth-toggle" class="btn small" type="button">Enable Bluetooth</button>
-              <p id="bluetooth-status" class="muted small" role="status"></p>
-            </div>
             <div class="pair-actions">
               <button id="copy-link" class="btn small" type="button">Copy pairing link</button>
+            </div>
+            <div class="bluetooth-options" aria-labelledby="bluetooth-title">
+              <h3 id="bluetooth-title">Also connect by Bluetooth</h3>
+              <p id="bluetooth-status" class="muted small" role="status"></p>
+              <button id="bluetooth-toggle" class="btn small" type="button">Enable Bluetooth</button>
+            </div>
+            <div class="pair-actions secondary-pair-actions">
               <button id="new-code" class="btn small" type="button">New pairing code</button>
             </div>
             <p id="new-code-confirm" class="confirm" hidden>
@@ -112,7 +115,7 @@
 
       <table id="table" class="scans" hidden>
         <thead>
-          <tr><th scope="col">Time</th><th scope="col">Barcode</th><th scope="col">Type</th><th scope="col">Device</th><th scope="col">Session</th></tr>
+          <tr><th scope="col">Time</th><th scope="col">Barcode</th><th scope="col">Type</th><th scope="col">Device</th><th scope="col">Session</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
@@ -121,6 +124,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

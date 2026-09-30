@@ -10,7 +10,7 @@ Bluetooth is being prepared for version 2.1.0. The published 2.0.0 installers do
 
 1. Open the desktop app and select **Enable Bluetooth** under **Connect a scanner**. Allow its Bluetooth access if macOS asks.
 2. Open CT45 Computer Link on the unlocked CT45 and scan the updated pairing QR code.
-3. Tap the connection button at the top of the Android app and choose **Connection: Bluetooth**. On Android 12+, allow **Nearby devices**. Android 10–11 uses the system's location permission for Bluetooth discovery and may require Location to be on.
+3. Tap **Change connection → Bluetooth** in the Android status card. On Android 12+, allow **Nearby devices**. Android 10–11 uses the system's location permission for Bluetooth discovery and may require Location to be on.
 4. Wait for **Connected**. The Android app reports an encrypted Bluetooth connection and the desktop labels the scanner **Bluetooth**.
 5. For use with the screen off or another app visible, enable **Keep running in the background** before locking the CT45. Allow notifications so connection status remains visible.
 
@@ -24,10 +24,10 @@ Bluetooth works without a shared network. Keep the computer awake, nearby, and t
 |---|---|
 | No Bluetooth choice on the computer | The desktop Bluetooth implementation is macOS-only. Use Wi-Fi or USB on Windows. |
 | Desktop says permission is missing | Allow CT45 Computer Link in **System Settings → Privacy & Security → Bluetooth**, then enable it again in the app. |
-| CT45 asks for an updated pairing code | Enable Bluetooth in the desktop app first, then rescan its QR. An older QR may contain only network details. |
+| CT45 says Choose a connection | The QR has no Bluetooth endpoint. Tap **Use Wi-Fi / USB**, or enable Bluetooth on the Mac and rescan its updated QR. |
 | CT45 cannot find the Mac | Keep the Mac awake and Bluetooth enabled on both devices. Check Nearby devices permission (Android 12+) or Location permission/settings (Android 10–11). |
-| A brief outage takes time to recover | Discovery retries automatically, with a 7–15 second delay between attempts. Returning to the app prompts another attempt. |
-| Bluetooth is blocked by device policy | Use an IT-approved Wi-Fi or USB route. Choose **Connection: Wi-Fi / USB** on the CT45. |
+| A brief outage takes time to recover | Discovery initially retries with a 7–15 second delay, then every 60 seconds after five consecutive failures. Returning to the app prompts an earlier attempt while keeping registrations at least seven seconds apart. |
+| Bluetooth is blocked by device policy | Use an IT-approved Wi-Fi or USB route. Choose **Change connection → Wi-Fi / USB** on the CT45. |
 | Scans stop when the screen locks | Enable background mode before locking. Hardware scan-button behavior also depends on Honeywell firmware and scanner configuration. |
 
 ## Developer tests

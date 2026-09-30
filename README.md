@@ -6,6 +6,8 @@ Scan a barcode on a Honeywell CT45 and send it to your Mac or Windows computer. 
 
 The development version adds **encrypted Bluetooth for macOS and Android 10+**. It is not included in the v2.0.0 downloads above. Bluetooth hardware validation is in progress; see [Bluetooth setup and testing](docs/bluetooth.md).
 
+It also adds handheld session selection, copying and locally discarding waiting scans, repeated-barcode markers, clearer connection recovery, and visible desktop Copy buttons. These improvements are included in the development branch, not the stable download.
+
 [View the v2.1 desktop and Android UI screenshots](docs/images/v2.1/README.md).
 
 ![Named scanning session on the desktop](docs/images/desktop.png)
@@ -67,6 +69,12 @@ Install both v2 apps, then scan the new pairing QR code once. The encrypted prot
 
 **Clear** removes the selected session’s scans, including those hidden by search. Selecting **All sessions** clears every session’s scans. Export first if you need them. Session names remain available to resume.
 
+In the development builds, **Change session** on the CT45 selects an existing desktop session. This changes the session for new scans from **every connected scanner**. Create sessions on the computer first; waiting scans keep their original session. The control requires a connected desktop with session-control support.
+
+Tap a recent Android scan to **Copy barcode**. A saved scan still marked **Waiting** also offers **Discard locally**, with confirmation. This stops retries on that device and keeps a discard record across restarts. It cannot remove a scan already received by the computer: a lost acknowledgement can leave a received scan marked Waiting. Sent and rejected scans cannot be discarded. New input over 8,192 characters is rejected visibly without truncating it; an oversized entry saved by an older build becomes Rejected so later scans can continue.
+
+On the development desktop, **Seen N×** marks repeated exact barcode text within the same session. Every intentional scan remains in the log and exports; retransmissions with the same scan ID are still deduplicated. Use a row’s **Copy** button with a mouse or keyboard. Connected-device labels distinguish Bluetooth, Network, and Local connection; the address remains in a tooltip. Local connection alone does not identify USB.
+
 **Type into other apps** sends new scans to the app containing your cursor. The desktop does not type while its own window is active, or when a scan waited more than 60 seconds before sending. Delayed scans still appear in the log. On macOS, grant Accessibility permission and allow System Events when asked. Windows cannot type into an app running as administrator.
 
 On the CT45, **Keep running in the background** keeps the scanner claimed while another app or the lock screen is visible, with a persistent notification. Turn it off to return the scanner to other apps. Screen-off scanning depends on the device’s Honeywell firmware and scan-button settings. Pairing QR codes are accepted only while this app is on screen.
@@ -87,13 +95,15 @@ If the device shows **Not saved**, keep the app open and free storage. It retrie
 
 **USB fallback:** enable USB debugging, connect the cable, and run `adb reverse tcp:8765 tcp:8765`. If the desktop shows a different port, substitute it on both sides. The QR code includes the loopback route; encrypted connections work over USB too. Repeat the command after reconnecting the cable.
 
-**Bluetooth fallback (development version):** on a Mac, select **Enable Bluetooth**, scan the updated QR code, then choose **Connection: Bluetooth** on the CT45. Allow Nearby devices when asked. This works without a shared network and uses the same pinned TLS encryption. Windows Bluetooth is not implemented; Wi-Fi and USB remain available on Windows. See the [setup guide](docs/bluetooth.md) for requirements and troubleshooting.
+**Bluetooth fallback (development version):** on a Mac, select **Enable Bluetooth**, scan the updated QR code, then choose **Change connection → Bluetooth** on the CT45. Allow Nearby devices when asked. If the pairing code has no Bluetooth endpoint, **Use Wi-Fi / USB** offers a guided switch. This works without a shared network and uses the same pinned TLS encryption. Windows Bluetooth is not implemented; Wi-Fi and USB remain available on Windows. See the [setup guide](docs/bluetooth.md) for requirements and troubleshooting. Android’s **More** menu contains **Unpair**.
 
 ## Privacy and security
 
 Barcode traffic uses TLS 1.2 or later. The Android app checks the exact certificate fingerprint from the QR code before sending its pairing token. Network discovery advertises only a public computer ID and port; a matching discovery name alone is not trusted. A new IP address does not require trusting a new certificate.
 
 The pairing QR code grants access to send scans and should be kept private. Use **New pairing code** to revoke it. Scans and exports are stored locally, without additional at-rest encryption; protect them with your device’s account and disk security. There is no scan telemetry or cloud upload. The desktop identity lasts ten years; a replacement identity requires pairing again.
+
+When enabled, Bluetooth advertises the persistent public computer UUID nearby, without credentials or barcode contents. The Android scanner receiver accepts Honeywell-style scan broadcasts from other local apps; it cannot prove that a barcode came from the optical trigger. Only install trusted apps on scanning devices, especially when desktop keyboard input is enabled.
 
 ## Development
 
@@ -122,10 +132,13 @@ Android integration tests require a **disposable emulator** because they clear a
 ```sh
 cd desktop
 ANDROID_SERIAL=emulator-5580 npm run android-e2e
+ANDROID_SERIAL=emulator-5580 node scripts/android-polish-e2e.mjs
 OLD_APK=/path/to/CT45-Computer-Link-1.0.0-debug.apk \
   ANDROID_SERIAL=emulator-5580 node scripts/android-release-e2e.mjs
 ```
 
 The release test installs v1, upgrades to the signed v2 APK, and checks preserved scans, certificate rejection, offline sessions, and discovery at a new endpoint. The emulator must start without this app installed. mDNS testing needs a network that carries discovery traffic.
+
+The polish test reinstalls the debug app on the selected disposable emulator, then checks oversized queue recovery, session selection, local discard persistence, and guided connection recovery. Set `SCREENSHOT_DIR` to save synthetic UI examples. It does not test Bluetooth radio delivery or Honeywell optics.
 
 **Validation limits:** automated tests and emulator checks do not replace testing a physical CT45, Windows, or a particular corporate Wi-Fi network. macOS installers are built for both architectures; Windows is cross-built. See the release notes for the exact checks performed.

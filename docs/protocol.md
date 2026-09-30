@@ -33,7 +33,7 @@ The desktop publishes `_ct45link._tcp` using mDNS/DNS-SD. Its service name is `c
 
 Android uses `NsdManager` while disconnected. It matches the service name and TXT ID, resolves a candidate address and port, and then performs the **same pinned TLS handshake**. A forged discovery record cannot change the trusted identity. The successfully authenticated endpoint is cached only after welcome. QR addresses and USB loopback remain fallbacks. Discovery stops once connected and retries periodically when unavailable.
 
-After a connection failure, retry backoff grows to 15 seconds. Each failed address gets at most a four-second connection attempt and an eight-second pairing-response window. A pending scan with no reply for ten seconds causes reconnection. Otherwise the 60-second WebSocket heartbeat detects silent failures. Discovery is local-subnet only and depends on multicast being allowed.
+After a network connection failure, retry backoff grows to 15 seconds. Each failed address gets at most a four-second connection attempt and an eight-second pairing-response window. A pending scan with no reply for ten seconds causes reconnection. Otherwise the 60-second WebSocket heartbeat detects silent failures. Discovery is local-subnet only and depends on multicast being allowed.
 
 ## Bluetooth carrier (macOS / Android 10+)
 
@@ -43,7 +43,7 @@ The Mac advertises a BLE service UUID equal to its persistent computer UUID. Its
 
 The carrier uses unbonded L2CAP; the application still performs **the complete pinned TLS handshake before sending the pairing token or scans**. There is no operating-system Bluetooth pairing step. A byte bridge on each device transports the existing TLS WebSocket stream without decrypting it. The desktop bridge connects only to its own fixed loopback TLS port, caps concurrent channels at four, bounds buffers, and applies backpressure to Bluetooth writes. The `X-CT45-Transport: bluetooth` header is display metadata, never an authentication mechanism.
 
-Discovery and GATT reads each time out after 12 seconds; the overall Bluetooth pairing-response deadline is 60 seconds. Reconnection waits at least seven seconds to respect Android's scan registration limits, increasing to 15 seconds. Every attempt resolves the channel again, so a restarted Mac service may choose a new PSM. Existing acknowledgement, outbox, deduplication, session, and token-revocation rules apply unchanged.
+Discovery and GATT reads each time out after 12 seconds; the overall Bluetooth pairing-response deadline is 60 seconds. Reconnection initially waits 7–15 seconds, increasing to 60 seconds after five consecutive failures. Returning to the app can prompt an earlier attempt, but registrations remain at least seven seconds apart. Every attempt resolves the channel again, so a restarted Mac service may choose a new PSM. If Bluetooth mode is selected but the QR has no `bt` endpoint, Android presents an explicit Wi-Fi / USB switch instead of claiming to retry. Existing acknowledgement, outbox, deduplication, session, and token-revocation rules apply unchanged.
 
 ## Messages
 
@@ -56,6 +56,8 @@ Android → desktop:
 
 The first message must be `hello`, within five seconds. A barcode is at most 8192 characters, its ID at most 64, AIM/code IDs at most 8, and device name at most 100. WebSocket payloads are capped at 64 KiB. Scan timestamps must be finite numbers. Unknown fields are ignored.
 
+Android rejects new oversized barcode input before queuing and never truncates barcode data. Manual input remains in the field for correction. Invalid entries already saved by an older app are marked Rejected before transmission, allowing later valid scans through. Only the display device name is bounded to 100 characters in `hello`.
+
 Desktop → Android:
 
 ```json
@@ -67,9 +69,30 @@ Desktop → Android:
 
 Session IDs are at most 64 characters; names at most 80. The scanner persists the current session and copies it into each scan at capture time. A later session change never retags the outbox. Missing session data in pre-v2 history maps to `{id:"default",name:"General"}`. The desktop recovers unknown session IDs with their supplied names, for example after restoring a backup or moving a scanner to another computer.
 
+### Optional handheld session control
+
+Supporting desktops add `"capabilities":["session-control"]` and `"sessions":[{"id":"default","name":"General"}, ...]` to `welcome`. Their `session` broadcasts also carry the current catalog. Older desktops omit these fields; Android disables its session picker while retaining ordinary scan compatibility.
+
+An authenticated scanner may select an existing session:
+
+```json
+{"type":"select-session","sessionId":"<existing-session-id>","requestId":"<request-uuid>"}
+```
+
+Both IDs must be nonempty strings of at most 64 characters. The desktop saves the active session before broadcasting its authoritative `session` message to **all** connected scanners, then replies to the requesting scanner:
+
+```json
+{"type":"session-selected","requestId":"<request-uuid>"}
+{"type":"error","code":"session-unavailable","requestId":"<request-uuid>","message":"..."}
+```
+
+The error is used for unsupported control, unknown sessions, or save failures. These control responses never contain a scan `id` and cannot acknowledge or reject a queued scan. Android waits up to eight seconds for the matching response and shows an error on timeout or disconnect; it updates the active session only from desktop session state. Creating sessions remains a desktop action.
+
 ## Delivery and storage
 
 Android saves each scan before sending it. Failed local writes stay visible as **Not saved**, retry every five seconds, and are withheld from the network until saved. The outbox survives process restarts. Acknowledgements remove entries from the outbox; the device retains 100 completed scans for its recent history.
+
+A user may confirm **Discard locally** for a saved waiting scan. The discard marker is committed before removing that entry from the outbox; a failed write leaves it waiting. Discard records are retained beyond the 100 completed-scan history limit. No discard message is sent to the desktop. Delivery may already have occurred before an acknowledgement was lost, so local discard cannot retract a received scan. A late acknowledgement can mark the retained record **Received before discard**. Sent and rejected entries are ineligible for discard.
 
 The desktop appends scans to JSONL before acknowledging them, deduplicating by ID. Failed writes return `save-failed`; Android retries after five seconds. `bad-message` with a scan ID marks the entry **Rejected** and stops resending it. Damaged trailing JSONL records are separated from future records during recovery. This is crash recovery, not a guarantee against storage hardware failure or loss of an unsaved scan.
 

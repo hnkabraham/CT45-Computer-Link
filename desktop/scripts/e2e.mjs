@@ -251,6 +251,20 @@ try {
   await cdp.eval('document.getElementById("active-session").value = "default"; document.getElementById("active-session").dispatchEvent(new Event("change")); true');
   check('an earlier session can be resumed', await cdp.waitFor('(async () => (await window.ct45.getState()).sessions.activeId === "default")()'));
 
+  const repeats = await fakeScan(newLink, ['BIN-A-0042', 'BIN-A-0042'], { host: '127.0.0.1', device: 'Demo CT45' });
+  await cdp.eval('document.getElementById("view-session").value = ""; document.getElementById("view-session").dispatchEvent(new Event("change")); true');
+  check('intentional repeated scans are kept and labeled', await cdp.waitFor('document.querySelectorAll(".repeat-badge").length === 2') && (await cdp.eval('window.ct45.getState()')).scans.length === 3);
+  check('copy has a keyboard-accessible button', await cdp.eval('document.querySelector("#rows .copy-scan").tagName === "BUTTON"'));
+  await cdp.eval('document.querySelector("#rows .copy-scan").click(); true');
+  check('copy button copies only the barcode', await cdp.waitFor(`${text('toast')} === "Copied BIN-A-0042"`));
+  check('loopback does not pretend to be USB', await cdp.eval('document.querySelector("#device-list .meta").textContent.startsWith("Local connection")'));
+  const target = (await cdp.eval('window.ct45.getState()')).sessions.items.find((s) => s.name === 'Warehouse count');
+  repeats.ws.send(JSON.stringify({ type: 'select-session', sessionId: target.id, requestId: 'from-handheld' }));
+  check('handheld session selection updates the desktop control', await cdp.waitFor('document.getElementById("active-session").selectedOptions[0].textContent === "Warehouse count"'));
+  await sleep(2600);
+  await cdp.screenshot('ct45-desktop-repeats.png');
+  repeats.ws.close();
+
 } finally {
   cdp.close();
   await quit(child);

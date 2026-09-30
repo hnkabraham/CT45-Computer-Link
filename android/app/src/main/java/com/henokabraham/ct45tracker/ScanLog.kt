@@ -9,16 +9,17 @@ import java.util.UUID
 
 /**
  * One scan as shown on the device: `sent` once the computer has acknowledged it, `rejected` if
- * the computer said it can never accept it (so it isn't sent again).
+ * the computer or local validation cannot accept it, or `discarded` after a confirmed local
+ * stop-retrying action. A late acknowledgement may coexist with the discard marker.
  */
-data class LoggedScan(val scan: Protocol.Scan, val sent: Boolean, val rejected: Boolean = false) {
-    val done get() = sent || rejected
+data class LoggedScan(val scan: Protocol.Scan, val sent: Boolean, val rejected: Boolean = false, val discarded: Boolean = false) {
+    val done get() = sent || rejected || discarded
 }
 
 /**
  * Scans in newest-first order. Unsent ones are the outbox: they're sent (again) on every
  * connect until the computer acknowledges them, so nothing scanned while out of Wi-Fi is lost.
- * Sent ones are kept only as a short history for the screen.
+ * Sent/rejected ones are kept as a short history; explicit discard markers remain durable.
  */
 data class ScanLogState(val scans: List<LoggedScan> = emptyList()) {
     val unsent: List<Protocol.Scan> get() = scans.filter { !it.done }.map { it.scan }.reversed()
@@ -29,14 +30,16 @@ data class ScanLogState(val scans: List<LoggedScan> = emptyList()) {
 
     fun markRejected(id: String) = trimmed(scans.map { if (it.scan.id == id && !it.sent) it.copy(rejected = true) else it })
 
+    fun discard(id: String) = copy(scans = scans.map { if (it.scan.id == id && !it.done) it.copy(discarded = true) else it })
+
     // Never drops an unsent scan, however many pile up.
     private fun trimmed(list: List<LoggedScan>): ScanLogState {
         var doneKept = 0
-        return ScanLogState(list.filter { !it.done || ++doneKept <= KEEP_SENT })
+        return ScanLogState(list.filter { !it.done || it.discarded || ++doneKept <= KEEP_SENT })
     }
 
     fun toJson(): String = JSONArray(
-        scans.map { (s, sent, rejected) ->
+        scans.map { (s, sent, rejected, discarded) ->
             JSONObject()
                 .put("id", s.id)
                 .put("data", s.data)
@@ -47,6 +50,7 @@ data class ScanLogState(val scans: List<LoggedScan> = emptyList()) {
                 .put("sessionName", s.sessionName)
                 .put("sent", sent)
                 .put("rejected", rejected)
+                .put("discarded", discarded)
         },
     ).toString()
 
@@ -72,6 +76,7 @@ data class ScanLogState(val scans: List<LoggedScan> = emptyList()) {
                             ),
                             sent = o.optBoolean("sent"),
                             rejected = o.optBoolean("rejected"),
+                            discarded = o.optBoolean("discarded"),
                         )
                     },
                 )
@@ -135,6 +140,27 @@ class ScanLog internal constructor(
     // crash only means the scan is sent again, and the computer ignores repeats.
     fun markSent(id: String) = updateSoon(state.markSent(id))
     fun markRejected(id: String) = updateSoon(state.markRejected(id))
+
+    /** Persist the local discard marker before changing the queue. A late ack can still
+     * mark this record sent: discarding cannot undo delivery on the computer. */
+    fun discard(id: String): Boolean {
+        if (!isSaved(id) || state.scans.none { it.scan.id == id && !it.done }) return false
+        val next = state.discard(id)
+        val saved = try { persist(next.toJson()) } catch (_: Exception) { false }
+        if (!saved) {
+            hasSaveError = true
+            scheduleSave(RETRY_MS)
+            listeners.toList().forEach { it() }
+            return false
+        }
+        state = next
+        hasSaveError = false
+        unsavedIds.clear()
+        cancel(saveNow)
+        savePending = false
+        listeners.toList().forEach { it() }
+        return true
+    }
 
     private fun updateSoon(next: ScanLogState) {
         if (next == state) return

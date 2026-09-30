@@ -97,16 +97,23 @@ function publicSettings() {
   return { typing: settings.typing, suffix: settings.suffix };
 }
 
+function loadDataFile(name, load) {
+  const file = path.join(app.getPath('userData'), name);
+  try { return load(file); }
+  catch (error) { throw new Error(`Could not open ${file}: ${error.message}`); }
+}
+
 async function setBluetooth(enabled) {
+  const nextSettings = { ...settings, bluetooth: enabled && process.platform === 'darwin' };
+  saveSettings(nextSettings);
+  settings = nextSettings;
   const generation = ++bluetoothGeneration;
   bluetooth?.stop();
   bluetooth = null;
-  settings.bluetooth = enabled && process.platform === 'darwin';
-  saveSettings(settings);
   const update = async (next) => {
     if (generation !== bluetoothGeneration) return;
-    bluetoothState = next;
-    send('bluetooth', next);
+    bluetoothState = { ...next, enabled: settings.bluetooth };
+    send('bluetooth', bluetoothState);
     await publishPairing();
   };
   await update({ status: process.platform !== 'darwin' ? 'unsupported' : enabled ? 'starting' : 'off' });
@@ -120,7 +127,7 @@ async function handleScan(msg) {
   if (store.has(msg.id)) return;
   const previous = sessions.state;
   const session = sessions.resolve(msg);
-  if (previous !== sessions.state) send('sessions', sessions.state);
+  if (previous !== sessions.state) { send('sessions', sessions.state); server.sessionChanged(); }
   const scan = {
     id: msg.id,
     data: msg.data,
@@ -240,8 +247,9 @@ function registerIpc() {
   });
 
   ipcMain.handle('new-pairing-code', async () => {
-    settings.token = newToken();
-    saveSettings(settings);
+    const next = { ...settings, token: newToken() };
+    saveSettings(next);
+    settings = next;
     server.disconnectAll();
     await publishPairing();
     return pairing;
@@ -268,20 +276,28 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     try {
       settings = loadSettings();
-      store = new ScanStore(path.join(app.getPath('userData'), 'scans.jsonl')).load();
-      sessions = new Sessions(path.join(app.getPath('userData'), 'sessions.json'));
-      identity = await loadIdentity(path.join(app.getPath('userData'), 'identity.json'));
+      store = loadDataFile('scans.jsonl', (file) => new ScanStore(file).load());
+      sessions = loadDataFile('sessions.json', (file) => new Sessions(file));
+      const identityFile = path.join(app.getPath('userData'), 'identity.json');
+      try { identity = await loadIdentity(identityFile); }
+      catch (error) { throw new Error(`Could not open ${identityFile}: ${error.message}`); }
       server = await startServer({
         port: settings.port,
         identity,
         getSession: () => sessions.active,
+        getSessions: () => sessions.state.items.map(({ id, name }) => ({ id, name })),
+        onSelectSession: (id) => {
+          sessions.activate(id);
+          send('sessions', sessions.state);
+          server.sessionChanged();
+        },
         getToken: () => settings.token,
         computerName,
         onScan: handleScan,
         onDevicesChanged: (devices) => send('devices', devices),
       });
     } catch (e) {
-      dialog.showErrorBox('CT45 Computer Link', `Couldn't start listening for scanners: ${e.message}`);
+      dialog.showErrorBox('CT45 Computer Link', `Could not start CT45 Computer Link.\n\n${e.message}`);
       app.quit();
       return;
     }

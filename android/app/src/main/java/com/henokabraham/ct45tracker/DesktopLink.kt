@@ -7,12 +7,14 @@ import android.net.Network
 import com.henokabraham.ct45tracker.ComputerDiscovery.Endpoint
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 /**
  * Keeps a WebSocket open to the paired computer, sends every unsent scan in [log], and marks
@@ -33,6 +35,7 @@ class DesktopLink(
         data class Retrying(val reason: String) : Status()
         /** The computer made a new pairing code; only scanning it again helps. */
         data object PairingExpired : Status()
+        data object NeedsNetwork : Status()
     }
 
     var status: Status = Status.NotPaired
@@ -53,6 +56,7 @@ class DesktopLink(
         private set
     private var tunnel: BluetoothTunnel? = null
     fun useBluetooth(enabled: Boolean) {
+        if (bluetoothMode == enabled) return
         bluetoothMode = enabled
         prefs.edit().putBoolean("bluetoothMode", enabled).apply()
         discovery.stop()
@@ -62,6 +66,43 @@ class DesktopLink(
     }
     var session = Protocol.Session(prefs.getString("sessionId", "default")!!, prefs.getString("sessionName", "General")!!)
         private set
+    var availableSessions: List<Protocol.Session> = emptyList()
+        private set
+    var supportsSessionSelection = false
+        private set
+    var sessionSelectionError: String? = null
+        private set
+    private var sessionRequest: String? = null
+    val canSelectSession get() = status is Status.Connected && supportsSessionSelection && sessionRequest == null
+    private val sessionOverdue = Runnable {
+        sessionRequest = null
+        sessionSelectionError = "No reply about the session. Check the current session, then try again."
+        setStatus(status)
+    }
+    private var lastBluetoothAttempt = -7000L
+
+    fun selectSession(id: String): Boolean {
+        if (!canSelectSession || availableSessions.none { it.id == id }) return false
+        if (id == session.id) return true
+        val requestId = UUID.randomUUID().toString()
+        sessionRequest = requestId
+        sessionSelectionError = null
+        if (socket?.send(Protocol.selectSession(id, requestId)) != true) {
+            sessionRequest = null
+            sessionSelectionError = "Could not request a session change. Reconnect and try again."
+            setStatus(status)
+            return false
+        }
+        main.postDelayed(sessionOverdue, 8000)
+        setStatus(status)
+        return true
+    }
+
+    fun discardScan(id: String): Boolean {
+        if (!log.discard(id)) return false
+        answered(id)
+        return true
+    }
     private var discovered: Endpoint? = null
     private var preferred: Endpoint? = pairing?.let { p ->
         prefs.getString(KEY_LAST_HOST, null)?.let { host ->
@@ -134,6 +175,9 @@ class DesktopLink(
         discovered = null
         preferred = null
         secureClient = null
+        availableSessions = emptyList()
+        supportsSessionSelection = false
+        sessionSelectionError = null
         if (pairing?.computerId != p.computerId) updateSession(Protocol.Session())
         pairing = p
         prefs.edit()
@@ -152,6 +196,8 @@ class DesktopLink(
         discovered = null
         preferred = null
         secureClient = null
+        availableSessions = emptyList()
+        supportsSessionSelection = false
         updateSession(Protocol.Session())
         prefs.edit().remove(KEY_PAIRING).remove(KEY_LAST_HOST).apply()
         disconnect()
@@ -164,9 +210,16 @@ class DesktopLink(
         if (bluetoothMode) {
             discovery.stop()
             if (p.bluetoothService.isEmpty()) {
-                setStatus(Status.Retrying("Enable Bluetooth on the computer and scan its QR code again"))
+                setStatus(Status.NeedsNetwork)
                 return
             }
+            val wait = lastBluetoothAttempt + 7000L - SystemClock.elapsedRealtime()
+            if (wait > 0) {
+                setStatus(Status.Connecting("Bluetooth"))
+                main.postDelayed(retry, wait)
+                return
+            }
+            lastBluetoothAttempt = SystemClock.elapsedRealtime()
             val gen = ++generation
             welcomed = false
             setStatus(Status.Connecting("Bluetooth"))
@@ -239,15 +292,37 @@ class DesktopLink(
                 discovery.stop()
                 if (!bluetoothMode) prefs.edit().putString(KEY_LAST_HOST, endpoint.host).putInt("lastPort", endpoint.port).apply()
                 updateSession(msg.session)
+                availableSessions = msg.sessions
+                supportsSessionSelection = msg.sessionControl
+                sessionSelectionError = null
                 setStatus(Status.Connected(msg.name.ifEmpty { pairing?.name.orEmpty() }))
                 flush()
             }
-            is Protocol.ServerMessage.SessionChanged -> { updateSession(msg.session); setStatus(status) }
+            is Protocol.ServerMessage.SessionChanged -> {
+                updateSession(msg.session)
+                availableSessions = msg.sessions
+                setStatus(status)
+            }
+            is Protocol.ServerMessage.SessionSelected -> {
+                if (msg.requestId == sessionRequest) {
+                    main.removeCallbacks(sessionOverdue)
+                    sessionRequest = null
+                    sessionSelectionError = null
+                    setStatus(status)
+                }
+            }
             is Protocol.ServerMessage.Ack -> {
                 answered(msg.id)
                 log.markSent(msg.id)
             }
             is Protocol.ServerMessage.Error -> {
+                if (msg.requestId != null && msg.requestId == sessionRequest) {
+                    main.removeCallbacks(sessionOverdue)
+                    sessionRequest = null
+                    sessionSelectionError = msg.message
+                    setStatus(status)
+                    return
+                }
                 // bad-token is followed by a close with CLOSE_BAD_TOKEN and needs nothing here.
                 val id = msg.id ?: return
                 answered(id)
@@ -269,6 +344,9 @@ class DesktopLink(
         val ws = socket ?: return
         if (!welcomed) return
         for (scan in log.outbox) {
+            // Recover already-saved invalid entries without ever putting a frame large enough
+            // to close the connection on the wire. Keep their contents as rejected history.
+            if (!Protocol.canSend(scan)) { log.markRejected(scan.id); continue }
             if (inFlight.add(scan.id)) {
                 ws.send(Protocol.scan(scan, System.currentTimeMillis()))
                 if (!ackTimerRunning) startAckTimer()
@@ -304,7 +382,7 @@ class DesktopLink(
         if (!bluetoothMode) discovery.start(pairing!!.computerId)
         // Android limits repeated BLE scan registrations. Keep retries below that limit even
         // when discovery succeeds immediately but a cached GATT endpoint cannot be opened.
-        val delay = if (bluetoothMode) backoff(failures).coerceAtLeast(7000L)
+        val delay = if (bluetoothMode) if (failures >= 5) 60_000L else backoff(failures).coerceAtLeast(7000L)
             else if (neverConnected && failures % tried != 0) 0L else backoff(failures / tried)
         setStatus(Status.Retrying(reason))
         main.postDelayed(retry, delay)
@@ -313,6 +391,9 @@ class DesktopLink(
     private fun backoff(round: Int) = (1000L shl round.coerceIn(0, 4)).coerceAtMost(15_000L)
 
     private fun disconnect() {
+        main.removeCallbacks(sessionOverdue)
+        if (sessionRequest != null) sessionSelectionError = "Connection interrupted. Check the current session after reconnecting."
+        sessionRequest = null
         main.removeCallbacks(retry)
         main.removeCallbacks(welcomeOverdue)
         main.removeCallbacks(resend)

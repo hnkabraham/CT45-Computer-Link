@@ -53,25 +53,30 @@ class ScanApp : Application() {
      * but only while the app is on screen: any app on the device can send the scan broadcast,
      * and must not be able to quietly point this device at another computer.
      */
-    fun handleScan(raw: String, aimId: String, codeId: String, canPair: Boolean) {
+    fun handleScan(raw: String, aimId: String, codeId: String, canPair: Boolean): Boolean {
         val data = raw.trimEnd('\r', '\n')
-        if (data.isBlank()) return
+        if (data.isBlank()) return false
         if (data.startsWith("${Protocol.PAIR_PREFIX}?")) {
             if (!canPair) {
                 Toast.makeText(this, R.string.open_app_to_pair, Toast.LENGTH_LONG).show()
-                return
+                return false
             }
             val pairing = Protocol.parsePairing(data)
             if (pairing == null || !link.pair(pairing)) {
                 Toast.makeText(this, R.string.invalid_pairing, Toast.LENGTH_LONG).show()
-                return
+                return false
             }
             val name = pairing.name.ifEmpty { getString(R.string.your_computer) }
             Toast.makeText(this, getString(R.string.pairing_with, name), Toast.LENGTH_SHORT).show()
-            return
+            return true
+        }
+        if (data.length > Protocol.MAX_DATA_LENGTH) {
+            Toast.makeText(this, R.string.scan_too_long, Toast.LENGTH_LONG).show()
+            return false
         }
         link.start()
         log.add(Protocol.Scan(UUID.randomUUID().toString(), data, System.currentTimeMillis(), aimId, codeId, link.session.id, link.session.name))
+        return true
     }
 
     /** "Keep running in the background": the saved setting is what counts. */

@@ -94,6 +94,7 @@ class ScanService : Service() {
             is DesktopLink.Status.Connected -> getString(R.string.notification_connected, computer) to (waitingText ?: getString(R.string.notification_ready))
             is DesktopLink.Status.Retrying -> getString(R.string.status_retrying, computer) to (waitingText ?: getString(R.string.notification_retrying))
             DesktopLink.Status.PairingExpired -> getString(R.string.status_expired) to getString(R.string.status_expired_detail)
+            DesktopLink.Status.NeedsNetwork -> getString(R.string.connection_action_title) to getString(R.string.connection_action_detail)
         }
         val open = PendingIntent.getActivity(
             this, 0,
