@@ -48,7 +48,7 @@ function renderConnection() {
   $('devices').hidden = n === 0;
   $('device-list').replaceChildren(
     ...state.devices.map((d) =>
-      el('li', {}, el('span', { className: 'name', textContent: d.device }), el('span', { className: 'meta', textContent: `${d.address} · since ${formatTime(d.since)}` })),
+      el('li', {}, el('span', { className: 'name', textContent: d.device }), el('span', { className: 'meta', textContent: `${d.transport === 'bluetooth' ? 'Bluetooth' : d.address} · since ${formatTime(d.since)}` })),
     ),
   );
   // Once something is connected the QR code only matters for adding another scanner.
@@ -80,6 +80,19 @@ function renderSettings() {
     $('typing-status').hidden = true;
     $('permission').hidden = true;
   }
+}
+
+function renderBluetooth() {
+  const b = state.bluetooth || { status: 'off' };
+  const button = $('bluetooth-toggle');
+  button.hidden = b.status === 'unsupported';
+  button.disabled = b.status === 'starting';
+  button.textContent = ['ready', 'waiting'].includes(b.status) ? 'Turn off Bluetooth connection' : b.status === 'starting' ? 'Starting Bluetooth…' : 'Enable Bluetooth';
+  $('bluetooth-status').textContent = b.status === 'ready'
+    ? 'Bluetooth ready. Scan this QR code, then choose Connection: Bluetooth on the CT45. Allow Nearby devices when asked.'
+    : ['error', 'waiting'].includes(b.status) ? b.message
+    : b.status === 'unsupported' ? 'Bluetooth connections are currently available on macOS.'
+    : 'Bluetooth works nearby without a shared Wi-Fi network. Your scans stay encrypted.';
 }
 
 function filteredScans() {
@@ -134,6 +147,7 @@ function render() {
   renderConnection();
   renderPairing();
   renderSettings();
+  renderBluetooth();
   renderScans();
 }
 
@@ -143,6 +157,11 @@ async function saveSettings(patch) {
 }
 
 window.ct45.on('sessions', (sessions) => { state.sessions = sessions; renderSessions(); renderScans(); });
+window.ct45.on('bluetooth', (bluetooth) => { state.bluetooth = bluetooth; renderBluetooth(); });
+$('bluetooth-toggle').addEventListener('click', async () => {
+  try { state.bluetooth = await window.ct45.setBluetooth(!['ready', 'waiting'].includes(state.bluetooth?.status)); renderBluetooth(); }
+  catch { toast('Could not change Bluetooth settings.'); }
+});
 
 // Events from the main process
 window.ct45.on('scan', (scan) => {

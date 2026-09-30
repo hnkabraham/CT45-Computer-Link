@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { loadIdentity } from './src/identity.js';
 import { advertiseComputer } from './src/discovery.js';
+import { startBluetooth } from './src/bluetooth.js';
 import { Sessions, selectScans } from './src/sessions.js';
 import { toExcel } from './src/excel.js';
 import { toCsv, localTimestamp } from './src/csv.js';
@@ -31,6 +32,10 @@ let pairing;
 let identity;
 let discovery;
 let sessions;
+let bluetooth;
+let bluetoothGeneration = 0;
+let pairingGeneration = 0;
+let bluetoothState = { status: process.platform === 'darwin' ? 'off' : 'unsupported' };
 const type = createTyper();
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
@@ -47,6 +52,7 @@ function loadSettings() {
     port: Number(process.env.CT45_PORT) || (Number.isInteger(saved.port) ? saved.port : DEFAULT_PORT),
     typing: saved.typing === true,
     suffix: SUFFIXES.includes(saved.suffix) ? saved.suffix : 'enter',
+    bluetooth: saved.bluetooth === true,
   };
   saveSettings(s);
   return s;
@@ -62,18 +68,25 @@ async function buildPairing() {
   const hosts = lanAddresses();
   // 127.0.0.1 last: over a USB cable with `adb reverse`, the CT45 reaches us there when Wi-Fi
   // won't carry device-to-device traffic.
-  const url = pairingUrl({ hosts: [...hosts, '127.0.0.1'], port: server.port, token: settings.token, name: computerName(), computerId: identity.id, fingerprint: identity.fingerprint });
+  const url = pairingUrl({ hosts: [...hosts, '127.0.0.1'], port: server.port, token: settings.token, name: computerName(), computerId: identity.id, fingerprint: identity.fingerprint, bluetoothService: bluetoothState.serviceId });
   const qr = await QRCode.toDataURL(url, { margin: 1, width: 480, errorCorrectionLevel: 'M' });
   return { url, qr, hosts, port: server.port, name: computerName() };
+}
+
+async function publishPairing() {
+  const generation = ++pairingGeneration;
+  const next = await buildPairing();
+  if (generation !== pairingGeneration) return;
+  pairing = next;
+  send('pairing', pairing);
 }
 
 // Wi-Fi changes (new network, new DHCP address) change what the QR code must say.
 async function refreshPairing() {
   const hosts = lanAddresses();
   if (pairing && hosts.join() === pairing.hosts.join()) return;
-  pairing = await buildPairing();
+  await publishPairing();
   discovery?.refresh();
-  send('pairing', pairing);
 }
 
 function send(channel, payload) {
@@ -82,6 +95,25 @@ function send(channel, payload) {
 
 function publicSettings() {
   return { typing: settings.typing, suffix: settings.suffix };
+}
+
+async function setBluetooth(enabled) {
+  const generation = ++bluetoothGeneration;
+  bluetooth?.stop();
+  bluetooth = null;
+  settings.bluetooth = enabled && process.platform === 'darwin';
+  saveSettings(settings);
+  const update = async (next) => {
+    if (generation !== bluetoothGeneration) return;
+    bluetoothState = next;
+    send('bluetooth', next);
+    await publishPairing();
+  };
+  await update({ status: process.platform !== 'darwin' ? 'unsupported' : enabled ? 'starting' : 'off' });
+  if (generation !== bluetoothGeneration || !settings.bluetooth) return bluetoothState;
+  const executable = app.isPackaged ? path.join(process.resourcesPath, 'bluetooth', 'ct45-bluetooth') : path.join(here, 'native/bin/ct45-bluetooth');
+  bluetooth = startBluetooth({ executable, serviceId: identity.id, port: server.port, onState: (next) => update(next).catch(console.error) });
+  return bluetoothState;
 }
 
 async function handleScan(msg) {
@@ -157,10 +189,13 @@ function registerIpc() {
     sessions: sessions.state,
     devices: server.devices(),
     pairing,
+    bluetooth: bluetoothState,
     settings: publicSettings(),
     platform: process.platform,
     typingSupported: process.platform === 'darwin' || process.platform === 'win32',
   }));
+
+  ipcMain.handle('set-bluetooth', (_e, enabled) => setBluetooth(enabled === true));
 
   ipcMain.handle('set-settings', (_e, patch) => {
     if (typeof patch?.typing === 'boolean') settings.typing = patch.typing;
@@ -208,7 +243,7 @@ function registerIpc() {
     settings.token = newToken();
     saveSettings(settings);
     server.disconnectAll();
-    pairing = await buildPairing();
+    await publishPairing();
     return pairing;
   });
 
@@ -259,10 +294,11 @@ if (!app.requestSingleInstanceLock()) {
     discovery = advertiseComputer(identity, server.port, (e) => console.warn('Local discovery unavailable:', e.message));
     registerIpc();
     createWindow();
+    if (settings.bluetooth) await setBluetooth(true);
     setInterval(() => refreshPairing().catch(() => {}), NETWORK_CHECK_MS);
   });
 
   // The window is the app: closing it stops listening for scanners, on every platform.
   app.on('window-all-closed', () => app.quit());
-  app.on('will-quit', () => { discovery?.stop(); server?.close(); });
+  app.on('will-quit', () => { ++bluetoothGeneration; ++pairingGeneration; bluetooth?.stop(); discovery?.stop(); server?.close(); });
 }

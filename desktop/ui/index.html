@@ -28,7 +28,11 @@
             <p class="pair-help">Open <strong>CT45 Computer Link</strong> on the CT45 and scan this code with the scan button.</p>
             <p class="secure-note">Encrypted · Reconnects automatically</p>
             <p class="pair-address"><span id="pair-address"></span></p>
-            <p id="no-network" class="warn" hidden>This computer isn't on a network. Connect it to the same Wi-Fi as the CT45.</p>
+            <p id="no-network" class="warn" hidden>No local network. Use Bluetooth, USB, or connect to the same Wi-Fi as the CT45.</p>
+            <div class="bluetooth-options">
+              <button id="bluetooth-toggle" class="btn small" type="button">Enable Bluetooth</button>
+              <p id="bluetooth-status" class="muted small" role="status"></p>
+            </div>
             <div class="pair-actions">
               <button id="copy-link" class="btn small" type="button">Copy pairing link</button>
               <button id="new-code" class="btn small" type="button">New pairing code</button>

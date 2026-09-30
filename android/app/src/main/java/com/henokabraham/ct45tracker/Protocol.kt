@@ -15,7 +15,7 @@ object Protocol {
     const val CLOSE_BAD_TOKEN = 4001
     const val CLOSE_REPAIRED = 4003
 
-    data class Pairing(val hosts: List<String>, val port: Int, val token: String, val name: String, val computerId: String = "", val fingerprint: String = "")
+    data class Pairing(val hosts: List<String>, val port: Int, val token: String, val name: String, val computerId: String = "", val fingerprint: String = "", val bluetoothService: String = "")
 
     data class Session(val id: String = "default", val name: String = "General")
 
@@ -55,7 +55,7 @@ object Protocol {
         val port = params["p"]?.toIntOrNull() ?: return null
         val token = params["t"].orEmpty()
         if (params["v"] != "2") return null
-        return validatedPairing(Pairing(hosts, port, token, params["n"].orEmpty(), params["id"].orEmpty(), params["fp"].orEmpty()))
+        return validatedPairing(Pairing(hosts, port, token, params["n"].orEmpty(), params["id"].orEmpty(), params["fp"].orEmpty(), params["bt"].orEmpty()))
     }
 
     /** Use the same URL builder for validation and connection, with no DNS lookup. */
@@ -65,8 +65,9 @@ object Protocol {
     fun validatedPairing(p: Pairing): Pairing? {
         if (p.hosts.isEmpty() || p.port !in 1..65535 || p.token.isEmpty() || p.token.length > 128) return null
         if (!p.computerId.matches(Regex("[a-zA-Z0-9-]{1,64}")) || !p.fingerprint.matches(Regex("[a-f0-9]{64}"))) return null
+        if (p.bluetoothService.isNotEmpty() && !p.bluetoothService.matches(Regex("[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"))) return null
         return try {
-            p.copy(hosts = p.hosts.map { serverUrl(it, p.port).host }.distinct())
+            p.copy(hosts = p.hosts.map { serverUrl(it, p.port).host }.distinct(), bluetoothService = p.bluetoothService.lowercase(java.util.Locale.ROOT))
         } catch (e: IllegalArgumentException) {
             null
         }

@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="bluetooth_requires_android_10">Bluetooth requires Android 10 or newer. Use Wi-Fi or USB on this device.</string>
     <string name="app_name">CT45 Computer Link</string>
+    <string name="connection_mode">Connection method</string>
+    <string name="connection_network">Connection: Wi-Fi / USB</string>
+    <string name="connection_bluetooth">Connection: Bluetooth</string>
+    <string name="bluetooth_connected_detail">Encrypted Bluetooth connection. Ready to scan.</string>
+    <string name="bluetooth_retrying_detail">%1$s. Keep the computer nearby with Bluetooth enabled in CT45 Computer Link. Retrying automatically…</string>
     <string name="unpair">Unpair</string>
     <string name="last_scan">Last scan</string>
     <string name="scan_meta">%1$s · %2$s · %3$s</string>

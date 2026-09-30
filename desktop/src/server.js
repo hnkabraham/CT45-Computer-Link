@@ -73,7 +73,8 @@ export async function startServer({
           send({ type: 'error', code: 'bad-token', message: 'This pairing code is no longer valid. Scan the new one.' });
           return ws.close(CLOSE_BAD_TOKEN, 'bad token');
         }
-        devices.set(ws, { device: msg.device, address, since: Date.now() });
+        const transport = address === '127.0.0.1' && req.headers['x-ct45-transport'] === 'bluetooth' ? 'bluetooth' : 'network';
+        devices.set(ws, { device: msg.device, address, transport, since: Date.now() });
         send({ type: 'welcome', name: computerName(), version: PROTOCOL_VERSION, session: getSession() });
         return changed();
       }

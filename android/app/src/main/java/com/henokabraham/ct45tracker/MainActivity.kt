@@ -38,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var lastScanMeta: TextView
     private lateinit var manual: EditText
     private lateinit var background: Switch
+    private lateinit var connectionMode: Button
     private val adapter = ScanAdapter()
 
     private val renderListener = { render() }
@@ -59,6 +60,19 @@ class MainActivity : Activity() {
         lastScanMeta = findViewById(R.id.last_scan_meta)
         manual = findViewById(R.id.manual)
         background = findViewById(R.id.background)
+        connectionMode = findViewById(R.id.connection_mode)
+        connectionMode.setOnClickListener {
+            AlertDialog.Builder(this).setTitle(R.string.connection_mode)
+                .setSingleChoiceItems(arrayOf(getString(R.string.connection_network), getString(R.string.connection_bluetooth)), if (app.link.bluetoothMode) 1 else 0) { dialog, which ->
+                    dialog.dismiss()
+                    if (which == 1 && Build.VERSION.SDK_INT < 29) {
+                        AlertDialog.Builder(this).setMessage(R.string.bluetooth_requires_android_10)
+                            .setPositiveButton(android.R.string.ok, null).show()
+                    } else if (which == 1 && !BluetoothTunnel.permitted(this)) {
+                        requestPermissions(BluetoothTunnel.permissions(), 1)
+                    } else app.link.useBluetooth(which == 1)
+                }.setNegativeButton(R.string.cancel, null).show()
+        }
         findViewById<ListView>(R.id.recent).adapter = adapter
 
         findViewById<Button>(R.id.send).setOnClickListener { submitManual() }
@@ -135,6 +149,7 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1 && BluetoothTunnel.permitted(this)) app.link.useBluetooth(true)
         app.applyBackground() // lets the service post its notification now that it may
     }
 
@@ -150,6 +165,7 @@ class MainActivity : Activity() {
 
     private fun render() {
         val link = app.link
+        connectionMode.text = getString(if (link.bluetoothMode) R.string.connection_bluetooth else R.string.connection_network)
         val computer = link.pairing?.name?.ifEmpty { null } ?: getString(R.string.your_computer)
         val waiting = app.log.state.unsent.size
         val waitingText = if (waiting > 0) resources.getQuantityString(R.plurals.waiting_count, waiting, waiting) else ""
@@ -160,9 +176,9 @@ class MainActivity : Activity() {
             is DesktopLink.Status.Connected -> Triple(
                 R.color.ok,
                 getString(R.string.status_connected, s.computer.ifEmpty { computer }),
-                waitingText.ifEmpty { getString(R.string.status_connected_detail) },
+                waitingText.ifEmpty { getString(if (link.bluetoothMode) R.string.bluetooth_connected_detail else R.string.status_connected_detail) },
             )
-            is DesktopLink.Status.Retrying -> Triple(R.color.pending, getString(R.string.status_retrying, computer), getString(R.string.status_retrying_detail))
+            is DesktopLink.Status.Retrying -> Triple(R.color.pending, getString(R.string.status_retrying, computer), if (link.bluetoothMode) getString(R.string.bluetooth_retrying_detail, s.reason) else getString(R.string.status_retrying_detail))
             DesktopLink.Status.PairingExpired -> Triple(R.color.bad, getString(R.string.status_expired), getString(R.string.status_expired_detail))
         }
         statusDot.backgroundTintList = ColorStateList.valueOf(getColor(color))

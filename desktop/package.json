@@ -1,7 +1,7 @@
 {
   "name": "ct45-tracker",
   "productName": "CT45 Computer Link",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Receives barcodes scanned on a Honeywell CT45 and lists them on your computer.",
   "type": "module",
   "main": "main.js",
@@ -13,7 +13,10 @@
     "android-e2e": "node scripts/android-e2e.mjs",
     "fake-scanner": "node scripts/fake-scanner.mjs",
     "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "dist:win": "electron-builder --win",
+    "build:bluetooth": "node scripts/build-bluetooth.mjs",
+    "bluetooth-hardware": "node scripts/bluetooth-hardware.mjs",
+    "predist:mac": "npm run build:bluetooth"
   },
   "dependencies": {
     "@peculiar/x509": "^2.1.0",
@@ -54,8 +57,16 @@
       "category": "public.app-category.productivity",
       "identity": "-",
       "extendInfo": {
-        "NSAppleEventsUsageDescription": "CT45 Computer Link types scanned barcodes into the app you're using."
-      }
+        "NSAppleEventsUsageDescription": "CT45 Computer Link types scanned barcodes into the app you're using.",
+        "NSBluetoothAlwaysUsageDescription": "CT45 Computer Link receives encrypted barcode scans from your CT45 over Bluetooth.",
+        "NSBluetoothPeripheralUsageDescription": "CT45 Computer Link receives encrypted barcode scans from your CT45 over Bluetooth."
+      },
+      "extraResources": [
+        {
+          "from": "native/bin/ct45-bluetooth",
+          "to": "bluetooth/ct45-bluetooth"
+        }
+      ]
     },
     "win": {
       "target": [

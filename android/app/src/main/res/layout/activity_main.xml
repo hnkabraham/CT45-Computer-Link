@@ -5,6 +5,16 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <Button
+        android:id="@+id/connection_mode"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="@string/connection_network"
+        android:textAllCaps="false"
+        android:textColor="@color/accent"
+        android:contentDescription="@string/connection_mode" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

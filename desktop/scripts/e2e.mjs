@@ -19,6 +19,7 @@ const PORT = 18765;
 const DEBUG_PORT = 19333;
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ct45-e2e-'));
 const shots = process.env.SCREENSHOT_DIR;
+const testBluetooth = process.env.CT45_BLUETOOTH_E2E === '1' && process.platform === 'darwin';
 if (shots) fs.mkdirSync(shots, { recursive: true });
 
 let failures = 0;
@@ -133,6 +134,15 @@ try {
   check('pairing QR rendered', (await cdp.eval('document.getElementById("qr").naturalWidth')) > 100);
   check('pairing panel open while nothing is connected', await cdp.eval('document.getElementById("pair").open'));
   check('typing off by default', (await cdp.eval('document.getElementById("typing").checked')) === false && readSettings().typing === false);
+  check('Bluetooth starts disabled without changing network pairing', !readSettings().bluetooth && !new URL(state.pairing.url).searchParams.has('bt'));
+  if (testBluetooth) {
+    await cdp.eval('document.getElementById("bluetooth-toggle").click(); true');
+    check('packaged Bluetooth helper starts and adds its identity to the QR', await cdp.waitFor('(async () => { const s = await window.ct45.getState(); return s.bluetooth.status === "ready" && new URL(s.pairing.url).searchParams.get("bt") === s.bluetooth.serviceId; })()', 30000));
+    await cdp.eval('Promise.all([window.ct45.setBluetooth(true), window.ct45.setBluetooth(false)])');
+    check('rapid Bluetooth enable/disable leaves no stale QR endpoint', await cdp.waitFor('(async () => { const s = await window.ct45.getState(); return s.bluetooth.status === "off" && !new URL(s.pairing.url).searchParams.has("bt"); })()'));
+    await cdp.eval('window.ct45.setBluetooth(true)');
+    check('Bluetooth can start again', await cdp.waitFor('(async () => (await window.ct45.getState()).bluetooth.status === "ready")()', 30000));
+  }
   await cdp.screenshot('ct45-desktop-empty.png');
 
   // A scanner connects and scans. Connect over loopback: the LAN address can be firewalled.
@@ -193,6 +203,11 @@ try {
   await quit(child);
   ({ child, cdp } = await launch());
   check('scans survive a restart', await cdp.waitFor(`${rows} === 4`));
+  if (testBluetooth) {
+    check('Bluetooth preference survives a desktop restart', readSettings().bluetooth && await cdp.waitFor('(async () => (await window.ct45.getState()).bluetooth.status === "ready")()', 30000));
+    await cdp.eval('window.ct45.setBluetooth(false)');
+    check('Bluetooth can be disabled after restart', (await cdp.eval('window.ct45.getState()')).bluetooth.status === 'off');
+  }
 
   // New pairing code invalidates the old link.
   const oldLink = (await cdp.eval('window.ct45.getState()')).pairing.url;

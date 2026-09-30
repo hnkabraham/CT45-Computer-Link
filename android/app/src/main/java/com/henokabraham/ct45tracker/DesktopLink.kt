@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
  * posted there.
  */
 class DesktopLink(
-    context: Context,
+    private val context: Context,
     private val prefs: SharedPreferences,
     private val log: ScanLog,
     private val deviceName: String,
@@ -49,6 +49,17 @@ class DesktopLink(
         .pingInterval(60, TimeUnit.SECONDS)
         .build()
     private var secureClient: OkHttpClient? = null
+    var bluetoothMode: Boolean = prefs.getBoolean("bluetoothMode", false)
+        private set
+    private var tunnel: BluetoothTunnel? = null
+    fun useBluetooth(enabled: Boolean) {
+        bluetoothMode = enabled
+        prefs.edit().putBoolean("bluetoothMode", enabled).apply()
+        discovery.stop()
+        failures = 0
+        hostIndex = 0
+        connect()
+    }
     var session = Protocol.Session(prefs.getString("sessionId", "default")!!, prefs.getString("sessionName", "General")!!)
         private set
     private var discovered: Endpoint? = null
@@ -59,7 +70,7 @@ class DesktopLink(
         }
     }
     private val discovery = ComputerDiscovery(context) { endpoint ->
-        if (status !is Status.Connected && status !is Status.PairingExpired && endpoint != discovered) {
+        if (!bluetoothMode && status !is Status.Connected && status !is Status.PairingExpired && endpoint != discovered) {
             discovered = endpoint
             hostIndex = 0
             connect()
@@ -68,7 +79,7 @@ class DesktopLink(
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { main.post {
-            if (status is Status.Retrying) { discovery.stop(); pairing?.let { discovery.start(it.computerId) }; nudge() }
+            if (!bluetoothMode && status is Status.Retrying) { discovery.stop(); pairing?.let { discovery.start(it.computerId) }; nudge() }
         } }
     }
     private val listeners = mutableListOf<() -> Unit>()
@@ -150,6 +161,23 @@ class DesktopLink(
     private fun connect() {
         disconnect()
         val p = pairing ?: return setStatus(Status.NotPaired)
+        if (bluetoothMode) {
+            discovery.stop()
+            if (p.bluetoothService.isEmpty()) {
+                setStatus(Status.Retrying("Enable Bluetooth on the computer and scan its QR code again"))
+                return
+            }
+            val gen = ++generation
+            welcomed = false
+            setStatus(Status.Connecting("Bluetooth"))
+            main.postDelayed(welcomeOverdue, 60000)
+            tunnel = BluetoothTunnel(context).also { bridge ->
+                bridge.start(p.bluetoothService,
+                    ready = { port -> onMain(gen) { openSocket(p, Endpoint("127.0.0.1", port), gen) } },
+                    failed = { reason -> onMain(gen) { lost(reason) } })
+            }
+            return
+        }
         discovery.start(p.computerId)
         val endpoints = endpoints(p)
         val endpoint = endpoints[hostIndex % endpoints.size]
@@ -158,15 +186,20 @@ class DesktopLink(
         welcomed = false
         inFlight.clear()
         setStatus(Status.Connecting(host))
+        main.postDelayed(welcomeOverdue, 8_000)
+        openSocket(p, endpoint, gen)
+    }
+
+    private fun openSocket(p: Protocol.Pairing, endpoint: Endpoint, gen: Int) {
         val request = try {
-            Request.Builder().url(Protocol.serverUrl(host, endpoint.port)).build()
+            Request.Builder().url(Protocol.serverUrl(endpoint.host, endpoint.port))
+                .header("X-CT45-Transport", if (bluetoothMode) "bluetooth" else "network").build()
         } catch (e: IllegalArgumentException) {
             // Also recover from a bad saved address without trapping the app in a crash loop.
             unpair()
             return
         }
         val tls = secureClient ?: PinnedTls.client(client, p.fingerprint).also { secureClient = it }
-        main.postDelayed(welcomeOverdue, 8_000)
         socket = tls.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) = onMain(gen) {
                 webSocket.send(Protocol.hello(p.token, deviceName, BuildConfig.VERSION_NAME))
@@ -202,9 +235,9 @@ class DesktopLink(
                 main.removeCallbacks(welcomeOverdue)
                 welcomed = true
                 failures = 0
-                preferred = endpoint
+                if (!bluetoothMode) preferred = endpoint
                 discovery.stop()
-                prefs.edit().putString(KEY_LAST_HOST, endpoint.host).putInt("lastPort", endpoint.port).apply()
+                if (!bluetoothMode) prefs.edit().putString(KEY_LAST_HOST, endpoint.host).putInt("lastPort", endpoint.port).apply()
                 updateSession(msg.session)
                 setStatus(Status.Connected(msg.name.ifEmpty { pairing?.name.orEmpty() }))
                 flush()
@@ -267,9 +300,12 @@ class DesktopLink(
         val neverConnected = !welcomed
         failures++
         if (neverConnected) hostIndex++
-        val tried = endpoints(pairing!!).size
-        discovery.start(pairing!!.computerId)
-        val delay = if (neverConnected && failures % tried != 0) 0L else backoff(failures / tried)
+        val tried = if (bluetoothMode) 1 else endpoints(pairing!!).size
+        if (!bluetoothMode) discovery.start(pairing!!.computerId)
+        // Android limits repeated BLE scan registrations. Keep retries below that limit even
+        // when discovery succeeds immediately but a cached GATT endpoint cannot be opened.
+        val delay = if (bluetoothMode) backoff(failures).coerceAtLeast(7000L)
+            else if (neverConnected && failures % tried != 0) 0L else backoff(failures / tried)
         setStatus(Status.Retrying(reason))
         main.postDelayed(retry, delay)
     }
@@ -285,6 +321,8 @@ class DesktopLink(
         generation++
         socket?.cancel()
         socket = null
+        tunnel?.close()
+        tunnel = null
     }
 
     private fun onMain(gen: Int, block: () -> Unit) {
@@ -319,7 +357,7 @@ class DesktopLink(
         // Stored in the same form as the QR code so there's one parser.
         fun pairingToText(p: Protocol.Pairing): String {
             fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
-            return "${Protocol.PAIR_PREFIX}?v=2&id=${enc(p.computerId)}&fp=${p.fingerprint}&h=${enc(p.hosts.joinToString(","))}&p=${p.port}&t=${enc(p.token)}&n=${enc(p.name)}"
+            return "${Protocol.PAIR_PREFIX}?v=2&id=${enc(p.computerId)}&fp=${p.fingerprint}&h=${enc(p.hosts.joinToString(","))}&p=${p.port}&t=${enc(p.token)}&n=${enc(p.name)}" + if (p.bluetoothService.isEmpty()) "" else "&bt=${enc(p.bluetoothService)}"
         }
     }
 }

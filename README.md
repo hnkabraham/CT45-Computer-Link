@@ -4,6 +4,8 @@ Scan a barcode on a Honeywell CT45 and send it to your Mac or Windows computer. 
 
 **[Download v2.0.0 — desktop installers and Android APK](https://github.com/hnkabraham/CT45-Computer-Link/releases/tag/v2.0.0)**
 
+The development version adds **encrypted Bluetooth for macOS and Android 10+**. It is not included in the v2.0.0 downloads above. Bluetooth hardware validation is in progress; see [Bluetooth setup and testing](docs/bluetooth.md).
+
 ![Named scanning session on the desktop](docs/images/desktop.png)
 
 - **Pair once:** scan the computer’s QR code with the CT45.
@@ -83,6 +85,8 @@ If the device shows **Not saved**, keep the app open and free storage. It retrie
 
 **USB fallback:** enable USB debugging, connect the cable, and run `adb reverse tcp:8765 tcp:8765`. If the desktop shows a different port, substitute it on both sides. The QR code includes the loopback route; encrypted connections work over USB too. Repeat the command after reconnecting the cable.
 
+**Bluetooth fallback (development version):** on a Mac, select **Enable Bluetooth**, scan the updated QR code, then choose **Connection: Bluetooth** on the CT45. Allow Nearby devices when asked. This works without a shared network and uses the same pinned TLS encryption. Windows Bluetooth is not implemented; Wi-Fi and USB remain available on Windows. See the [setup guide](docs/bluetooth.md) for requirements and troubleshooting.
+
 ## Privacy and security
 
 Barcode traffic uses TLS 1.2 or later. The Android app checks the exact certificate fingerprint from the QR code before sending its pairing token. Network discovery advertises only a public computer ID and port; a matching discovery name alone is not trusted. A new IP address does not require trusting a new certificate.
@@ -97,6 +101,7 @@ The desktop uses Electron and Node.js 20+; Android uses Kotlin, JDK 17, and the 
 git clone https://github.com/hnkabraham/CT45-Computer-Link.git
 cd CT45-Computer-Link/desktop
 npm ci
+npm run build:bluetooth # macOS: build the native helper before testing Bluetooth
 npm start
 npm test
 npm run e2e

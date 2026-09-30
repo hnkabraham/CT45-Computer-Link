@@ -12,8 +12,8 @@ android {
         minSdk = 26
         // The CT45 runs Android 13.
         targetSdk = 33
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "2.1.0"
     }
 
     buildTypes {

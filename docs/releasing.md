@@ -52,3 +52,9 @@ Upload only the three installers, the signed release APK, and `SHA256SUMS.txt`. 
 Run `desktop/scripts/android-release-e2e.mjs` on a disposable Android 13 emulator, with `OLD_APK` pointing at the actual v1.0.0 release asset and `ANDROID_SERIAL` selecting the emulator. `RESET_TEST_APP=1` uninstalls this app first, only after verifying the target is an emulator.
 
 The emulator's virtual network may not carry mDNS from the host's LAN. For that environment, `desktop/scripts/discovery-fixture/build.sh /tmp/ct45-discovery-fixture` builds a **test-only** Android app. Set `DISCOVERY_FIXTURE_APK=/tmp/ct45-discovery-fixture/fixture.apk` for the test. It advertises a new address/port through real Android NSD and forwards opaque TLS bytes to the desktop server. It cannot decrypt or authenticate the traffic; the normal production app still checks the pinned certificate. This tests Android discovery and endpoint migration without adding a test hook to the production app. It is not a physical Wi-Fi interoperability test.
+
+## Bluetooth release checks
+
+Mac packaging builds a universal CoreBluetooth helper with Xcode command-line tools. The two Bluetooth usage descriptions and the signed helper under `Contents/Resources/bluetooth/` must be present in both Mac app bundles. Run `CT45_BLUETOOTH_E2E=1` with each packaged executable to verify startup, QR updates, toggling, and persistence. Intel checks on Apple silicon use Rosetta and are not a substitute for testing Intel radio hardware.
+
+Follow [Bluetooth setup and testing](bluetooth.md) for physical CT45 checks. Keep test identity files, pairing links, serial numbers, raw device logs, and synthetic test data out of release assets. Do not present the connection-only soak as validation of optical scans or background scanning. Publish Bluetooth as macOS-only until a Windows implementation has its own hardware evidence.

@@ -11,6 +11,16 @@ class ProtocolTest {
     private val pin = "a".repeat(64)
     private val security = "v=2&id=test-computer&fp=$pin&"
     @Test
+    fun `Bluetooth pairing adds a validated service UUID without weakening certificate verification`() {
+        val base = "ct45tracker://pair?${security}h=127.0.0.1&p=8765&t=test"
+        assertEquals("", Protocol.parsePairing(base)?.bluetoothService)
+        assertEquals("e89c1e7a-0450-4d82-9b4c-b5c3f155cf45", Protocol.parsePairing("$base&bt=E89C1E7A-0450-4D82-9B4C-B5C3F155CF45")?.bluetoothService)
+        for (bad in listOf("broken", "AA:BB:CC:DD:EE", "AA:BB:CC:DD:EE:GG", "AA:BB:CC:DD:EE:FF/other")) {
+            assertNull(Protocol.parsePairing("$base&bt=$bad"))
+        }
+        assertNull(Protocol.parsePairing("$base&bt=e89c1e7a-0450-4d82-9b4c-b5c3f155cf45".replace("fp=$pin", "fp=wrong")))
+    }
+    @Test
     fun `legacy pairing never downgrades encryption`() {
         assertNull(Protocol.parsePairing("ct45tracker://pair?h=localhost&p=8765&t=secret"))
         assertNull(Protocol.parsePairing("ct45tracker://pair?v=2&id=test&fp=bad&h=localhost&p=8765&t=secret"))

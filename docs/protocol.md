@@ -19,6 +19,7 @@ ct45tracker://pair?v=2&h=192.168.1.20,127.0.0.1&p=8765&t=<token>&n=<computer-nam
 | `n` | Display name |
 | `id` | Stable public computer ID, at most 64 alphanumeric/hyphen characters |
 | `fp` | Exact leaf certificate SHA-256 fingerprint, 64 lowercase hex characters |
+| `bt` | Optional canonical UUID identifying the computer's Bluetooth LE advertisement |
 
 The desktop generates an ECDSA P-256 self-signed certificate and private key on first run. `identity.json` persists that identity independently of IP addresses, device names, sessions, and token rotation. Its file is created with mode 0600 on systems that support POSIX modes. A corrupt identity stops startup instead of silently replacing the trust anchor. The certificate lasts ten years; replacement requires scanning a new QR.
 
@@ -33,6 +34,16 @@ The desktop publishes `_ct45link._tcp` using mDNS/DNS-SD. Its service name is `c
 Android uses `NsdManager` while disconnected. It matches the service name and TXT ID, resolves a candidate address and port, and then performs the **same pinned TLS handshake**. A forged discovery record cannot change the trusted identity. The successfully authenticated endpoint is cached only after welcome. QR addresses and USB loopback remain fallbacks. Discovery stops once connected and retries periodically when unavailable.
 
 After a connection failure, retry backoff grows to 15 seconds. Each failed address gets at most a four-second connection attempt and an eight-second pairing-response window. A pending scan with no reply for ten seconds causes reconnection. Otherwise the 60-second WebSocket heartbeat detects silent failures. Discovery is local-subnet only and depends on multicast being allowed.
+
+## Bluetooth carrier (macOS / Android 10+)
+
+Bluetooth is an explicitly selected connection mode. It does not depend on IP addresses, mDNS, a shared network, or a USB tunnel. The optional `bt` QR parameter preserves compatibility with protocol 2 network pairing. Turning Bluetooth off on the desktop removes it from new pairing codes without revoking existing Wi-Fi credentials.
+
+The Mac advertises a BLE service UUID equal to its persistent computer UUID. Its read-only GATT characteristic `e89c1e7a-0450-4d82-9b4c-b5c3f155cf45` supplies the dynamically published L2CAP PSM as two little-endian bytes. Android scans for the advertised UUID, reads the characteristic, and opens an LE L2CAP channel. A cached characteristic from the same discovered peripheral may also supply a candidate endpoint. No advertisement or GATT value is an authentication credential.
+
+The carrier uses unbonded L2CAP; the application still performs **the complete pinned TLS handshake before sending the pairing token or scans**. There is no operating-system Bluetooth pairing step. A byte bridge on each device transports the existing TLS WebSocket stream without decrypting it. The desktop bridge connects only to its own fixed loopback TLS port, caps concurrent channels at four, bounds buffers, and applies backpressure to Bluetooth writes. The `X-CT45-Transport: bluetooth` header is display metadata, never an authentication mechanism.
+
+Discovery and GATT reads each time out after 12 seconds; the overall Bluetooth pairing-response deadline is 60 seconds. Reconnection waits at least seven seconds to respect Android's scan registration limits, increasing to 15 seconds. Every attempt resolves the channel again, so a restarted Mac service may choose a new PSM. Existing acknowledgement, outbox, deduplication, session, and token-revocation rules apply unchanged.
 
 ## Messages
 
