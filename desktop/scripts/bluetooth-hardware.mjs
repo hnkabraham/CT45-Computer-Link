@@ -18,6 +18,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serial = process.env.ANDROID_SERIAL;
 if (!serial || process.env.CT45_HARDWARE_TEST !== '1') throw new Error('Set ANDROID_SERIAL and CT45_HARDWARE_TEST=1 for the connected test device.');
 const hours = Number(process.env.CT45_SOAK_HOURS || 0);
+// Locking a managed device may require its owner's PIN again. Background tests normally use
+// the Home screen; opt into deliberate screen-off testing only when an unlock is available.
+const screenOff = process.env.CT45_SCREEN_OFF_TEST === '1';
 assert.ok(Number.isFinite(hours) && hours >= 0 && hours <= 8, 'Soak duration must be 0–8 hours');
 const dir = process.env.CT45_TEST_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'ct45-bluetooth-'));
 fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -115,7 +118,8 @@ try {
   shell('cmd', 'bluetooth_manager', 'enable');
   await foreground();
   originalBackground = node(screen(), 'resource-id', `${PKG}:id/background`).includes('checked="true"');
-  shell('svc', 'power', 'stayon', 'usb');
+  // Some CT45 USB docks report AC power. Cover every charging source, then restore it.
+  shell('svc', 'power', 'stayon', 'true');
   await chooseMode('Bluetooth');
   fs.writeFileSync(path.join(dir, 'pairing.txt'), link(), { mode: 0o600 });
   scan(link());
@@ -186,14 +190,15 @@ try {
   } finally { adb('reverse', '--remove', usb); }
   pass('switching back to Bluetooth restores the radio connection');
 
-  background(true); shell('input', 'keyevent', 'KEYCODE_HOME'); shell('input', 'keyevent', 'KEYCODE_SLEEP');
+  background(true); shell('input', 'keyevent', 'KEYCODE_HOME');
+  if (screenOff) shell('input', 'keyevent', 'KEYCODE_SLEEP');
   await pause(3000);
-  const screenOff = `${prefix}-screen-off`; scan(screenOff); await waitReceived(screenOff);
-  pass('background service receives and delivers a synthetic scan with the CT45 screen off');
+  const backgroundScan = `${prefix}-background`; scan(backgroundScan); await waitReceived(backgroundScan);
+  pass(`background service delivers a synthetic scan ${screenOff ? 'with the CT45 screen off' : 'while the Home screen is visible'}`);
   await stopBridge();
   const backgroundQueue = `${prefix}-background-reconnect`; scan(backgroundQueue);
   await pause(2000); await startBridge(); await waitReceived(backgroundQueue);
-  pass('screen-off background mode reconnects after the Mac Bluetooth service restarts');
+  pass(`background mode reconnects after the Mac Bluetooth service restarts (${screenOff ? 'screen off' : 'Home screen visible'})`);
 
   if (hours > 0) {
     report.status = 'soaking'; report.soakStarted = new Date().toISOString();
@@ -211,7 +216,7 @@ try {
         await pause(1000);
       }
     }
-    pass(`${hours}-hour screen-off Bluetooth soak with periodic disconnects completed`);
+    pass(`${hours}-hour background Bluetooth scan soak with periodic disconnects completed (${screenOff ? 'screen off' : 'Home screen visible'})`);
   }
   const persisted = new ScanStore(path.join(dir, 'received.jsonl')).load().list();
   assert.equal(persisted.length, store.list().length);
