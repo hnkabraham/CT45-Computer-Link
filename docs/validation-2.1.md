@@ -2,6 +2,22 @@
 
 Status on September 30, 2026: **development candidate; full physical-device acceptance remains incomplete**. The stable public download is still version 2.0.0.
 
+## September 30 Bluetooth-switch regression
+
+Further plugged-in CT45P testing exposed an active LE channel surviving the main Bluetooth switch being turned off. Android reported `enabled: false` with its radio in `BLE_ON`, and a diagnostic scan still reached the computer. This was reproduced with the existing test identity and was not caused by Hub re-enabling the switch.
+
+The Android tunnel now observes the protected adapter-state broadcast, checks the real public adapter state, and closes its discovery/socket resources when Bluetooth is disabled. The receiver is unregistered when the tunnel closes. The normal reconnection queue then resumes delivery when Bluetooth is enabled again. This respects the device's switch without changing system scanning or management policies. The dynamic receiver accepts privileged Bluetooth system broadcasts as described in the [Android broadcast documentation](https://developer.android.com/develop/background-work/background-tasks/broadcasts).
+
+The rebuilt signed APK was installed as an update. Its physical regression check passed: the app left Connected while the switch was off, a new scan remained queued, and enabling Bluetooth delivered it with acknowledgement. All 27 Android unit tests passed; debug/release builds and lint passed with zero errors and seven existing warnings. Release signature and alignment verification passed.
+
+All 19 functional hardware checks then passed on that build, covering pinned TLS, Bluetooth off/on, handheld session selection, Wi-Fi-off delivery, exact barcode text, wrong-pin rejection, lost-ack deduplication, save retry, offline help/retry controls, 25 queued scans across process restart, local discard, capture-time session retention, USB switching, and Home-screen background delivery/reconnection. The earlier runner stops were retained in private reports: two involved UI navigation in the harness, and the third exposed the Bluetooth-switch bug above.
+
+The follow-on 15-minute scan soak completed at 10:52 PM Pacific with all eight injected scans delivered over the real Bluetooth link. Reloading the desktop log and an independent inspection confirmed 48 records with 48 unique IDs: 39 functional scans, eight soak scans, and one previously queued feedback-test scan that survived the APK update. The deliberately lost acknowledgement caused one replay, correctly deduplicated. The discarded record was absent. The short soak had no planned helper restart because it ended before the runner's 15-cycle restart interval; helper restart recovery was exercised in the functional suite. This passes the short run, not the incomplete six-hour target.
+
+Cleanup completed without errors. Wi-Fi and Bluetooth are on, background scanning is off, the existing test pairing and connection mode were restored, and Home is visible. The requested stay-awake-while-charging setting remains `7`, with `mStayOn=true`; PIN protection was unchanged. The runner and its Mac sleep-prevention process exited, and the overnight automation remains paused. Private identities and raw logs remain outside the repository.
+
+The feedback controls were also exercised on the CT45: Sound and vibration was selectable and survived process restart after the UI confirmed the choice. With the device's existing Silent mode preserved, a waiting-feedback test produced no vibration request from this app. The feedback preference was restored to Off. This does not verify perceived sound/vibration patterns or independently establish Do Not Disturb behavior.
+
 ## September 30 main-branch hardware follow-up
 
 PR #1 was merged into `main` at the owner's request. The latest signed 2.1.0 APK was installed as an update on the reconnected physical CT45P, retaining the existing test pairing and prior scan history. It established the pinned TLS Bluetooth connection in about four seconds and reconnected after a planned Mac helper restart in about ten seconds. Three synthetic barcode records were received exactly once through Bluetooth, and the handheld showed the latest acknowledgement. The compact view and settings opened on the physical device; delivery feedback remained off by default.
@@ -75,7 +91,8 @@ Still required before calling the Bluetooth release fully validated:
 - Complete an uninterrupted soak before claiming the six-hour check passed.
 - Manually scan an optical barcode using the Honeywell hardware trigger; synthetic broadcasts do not test the camera/laser or firmware trigger behavior.
 - Verify screen-off scanning when the owner can unlock the device again; Home-screen background checks do not establish screen-off behavior.
-- Verify the updated queue/session controls and keyboard behavior on the physical CT45, including returning to the app without the soft keyboard covering the scan history.
+- Complete manual usability checks of the queue/session controls and keyboard on the physical CT45, including returning to the app without the soft keyboard covering scan history. The automated physical checks above covered session selection, local discard, and offline help/retry.
+- Check perceived sound/vibration patterns and Do Not Disturb behavior; the physical feedback check above covered selection, persistence, and Silent-mode vibration suppression.
 
 Windows runtime, Windows Bluetooth, Android 10–12 Bluetooth, real Intel radio hardware, enterprise device policies, and radio range/interference have not been validated. Windows Bluetooth is not implemented. See [Bluetooth setup and testing](bluetooth.md) for reproducible commands and the distinction between the scan suite and connection-only soak.
 

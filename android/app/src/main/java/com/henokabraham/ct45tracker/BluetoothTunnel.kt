@@ -1,11 +1,16 @@
 package com.henokabraham.ct45tracker
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import java.io.Closeable
 import java.io.IOException
 import java.net.InetAddress
@@ -25,6 +30,7 @@ class BluetoothTunnel(private val context: Context) : Closeable {
     private var listener: ServerSocket? = null
     private var local: Socket? = null
     private var finder: BleEndpointFinder? = null
+    private var powerReceiver: BroadcastReceiver? = null
 
     fun start(serviceId: String, ready: (Int) -> Unit, failed: (String) -> Unit) {
         thread(name = "ct45-bluetooth-connect", isDaemon = true) {
@@ -34,6 +40,28 @@ class BluetoothTunnel(private val context: Context) : Closeable {
                 if (!permitted(context)) throw IOException("Allow Bluetooth discovery in app permissions")
                 val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
                     ?: throw IOException("This device has no Bluetooth adapter")
+                val receiver = object : BroadcastReceiver() {
+                    override fun onReceive(context: Context, intent: Intent) {
+                        // Some CT45 firmware keeps existing LE channels alive in BLE_ON even
+                        // after the user turns Bluetooth off. Honor the public adapter switch.
+                        if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
+                        val enabled = try { adapter.isEnabled } catch (_: SecurityException) { false }
+                        if (!enabled) {
+                            val active = synchronized(lock) { !closed }
+                            close()
+                            if (active) failed("Turn on Bluetooth on the CT45")
+                        }
+                    }
+                }
+                synchronized(lock) {
+                    if (closed) return@thread
+                    // Bluetooth broadcasts originate from a privileged app UID. This action
+                    // is system-protected; also check the real adapter state, not intent extras.
+                    ContextCompat.registerReceiver(context, receiver,
+                        IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED), ContextCompat.RECEIVER_EXPORTED)
+                    powerReceiver = receiver
+                }
+                // Register before checking to cover an off transition during connection setup.
                 if (!adapter.isEnabled) throw IOException("Turn on Bluetooth on the CT45")
                 val discovery = BleEndpointFinder(context, UUID.fromString(serviceId))
                 synchronized(lock) {
@@ -80,11 +108,14 @@ class BluetoothTunnel(private val context: Context) : Closeable {
     }
 
     override fun close() {
-        val resources = synchronized(lock) {
+        val (resources, receiver) = synchronized(lock) {
             if (closed) return
             closed = true
-            listOfNotNull(local, listener, bluetooth, finder)
+            val receiver = powerReceiver
+            powerReceiver = null
+            listOfNotNull(local, listener, bluetooth, finder) to receiver
         }
+        if (receiver != null) try { context.unregisterReceiver(receiver) } catch (_: IllegalArgumentException) {}
         for (resource in resources) try { resource.close() } catch (_: IOException) {}
     }
 
