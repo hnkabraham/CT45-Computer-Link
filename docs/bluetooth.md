@@ -8,11 +8,11 @@ Bluetooth is being prepared for version 2.1.0. The published 2.0.0 installers do
 - A CT45 running Android 10 or later. Bluetooth was initially exercised on a CT45P with Android 13.
 - Install the matching desktop and Android builds. Wi-Fi and USB remain available on Android 8+ and Windows; Windows Bluetooth is not implemented.
 
-1. Open the desktop app and select **Enable Bluetooth** under **Connect a scanner**. Allow its Bluetooth access if macOS asks.
+1. Open the desktop app's **Settings** and select **Enable Bluetooth** under **Connect a scanner**. Allow its Bluetooth access if macOS asks.
 2. Open CT45 Computer Link on the unlocked CT45 and scan the updated pairing QR code.
-3. Tap **Change connection → Bluetooth** in the Android status card. On Android 12+, allow **Nearby devices**. Android 10–11 uses the system's location permission for Bluetooth discovery and may require Location to be on.
+3. Tap the arrow in the Android connection card, then choose **Bluetooth**. On Android 12+, allow **Nearby devices**. Android 10–11 uses the system's location permission for Bluetooth discovery and may require Location to be on.
 4. Wait for **Connected**. The Android app reports an encrypted Bluetooth connection and the desktop labels the scanner **Bluetooth**.
-5. For use with the screen off or another app visible, enable **Keep running in the background** before locking the CT45. Allow notifications so connection status remains visible.
+5. For use with the screen off or another app visible, open Android **Settings** and enable **Keep running in the background** before locking the CT45. Allow notifications so connection status remains visible.
 
 There is no need to pair the two devices in their operating-system Bluetooth settings. Ignoring an earlier operating-system pairing prompt does not prevent this connection. The apps discover a BLE channel and authenticate it using the certificate in the scanned QR code. Pairing credentials and barcode traffic use the same pinned TLS encryption as Wi-Fi and USB.
 
@@ -27,7 +27,7 @@ Bluetooth works without a shared network. Keep the computer awake, nearby, and t
 | CT45 says Choose a connection | The QR has no Bluetooth endpoint. Tap **Use Wi-Fi / USB**, or enable Bluetooth on the Mac and rescan its updated QR. |
 | CT45 cannot find the Mac | Keep the Mac awake and Bluetooth enabled on both devices. Check Nearby devices permission (Android 12+) or Location permission/settings (Android 10–11). |
 | A brief outage takes time to recover | Discovery initially retries with a 7–15 second delay, then every 60 seconds after five consecutive failures. Returning to the app prompts an earlier attempt while keeping registrations at least seven seconds apart. |
-| Bluetooth is blocked by device policy | Use an IT-approved Wi-Fi or USB route. Choose **Change connection → Wi-Fi / USB** on the CT45. |
+| Bluetooth is blocked by device policy | Use an IT-approved Wi-Fi or USB route. Tap the connection-card arrow and choose **Wi-Fi / USB** on the CT45. |
 | Scans stop when the screen locks | Enable background mode before locking. Hardware scan-button behavior also depends on Honeywell firmware and scanner configuration. |
 
 ## Developer tests

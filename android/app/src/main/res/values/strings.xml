@@ -21,9 +21,6 @@
     <string name="settings_unavailable">Could not open settings on this device.</string>
     <string name="help_network">Keep CT45 Computer Link open on the computer.\n\nWi-Fi: both devices must be able to reach each other. Guest or enterprise networks may block this. If the computer moved networks, scan its updated QR code.\n\nUSB: keep the cable connected and USB debugging authorized. On the computer, run adb reverse tcp:8765 tcp:8765 again after reconnecting the cable. Replace both port numbers with the port shown by the desktop app.</string>
     <string name="help_bluetooth">Keep the computer awake, nearby, and CT45 Computer Link open. Enable Bluetooth in the Mac app, then scan its updated QR code.\n\nCheck Bluetooth is on for both devices. In App settings, allow Nearby devices on Android 12+, or Location on Android 10–11. Android 10–11 may also need Location turned on.\n\nWindows uses Wi-Fi or USB. Change connection to switch routes. Your saved scans stay on this device.</string>
-    <string name="compact_scanning">Compact scanning view</string>
-    <string name="scanning_settings">Scanning settings</string>
-    <string name="hide_scanning_settings">Hide scanning settings</string>
     <string name="connection_compact">%1$s · Encrypted</string>
     <string name="delivery_feedback">Delivery feedback</string>
     <string name="feedback_setting">Delivery feedback: %1$s</string>
@@ -73,7 +70,6 @@
     <string name="status_connecting">Connecting to %1$s…</string>
     <string name="status_connected">Connected to %1$s</string>
     <string name="status_connected_detail">Encrypted Wi-Fi / USB connection. Ready to scan.</string>
-    <string name="current_session">Session: %1$s</string>
     <string name="status_retrying">Can\'t reach %1$s</string>
     <string name="status_retrying_detail">Keep the desktop app open. Check Wi-Fi reachability or USB forwarding. Reconnecting automatically…</string>
     <string name="status_expired">Pairing code changed</string>
@@ -97,4 +93,15 @@
     <string name="notification_ready">Ready to scan in the background.</string>
     <string name="notification_retrying">Scans are kept until it\'s back.</string>
     <string name="turn_off">Turn off</string>
+    <string name="nav_scan">Scan</string>
+    <string name="nav_history">History</string>
+    <string name="nav_settings">Settings</string>
+    <string name="enter_barcode">Enter barcode</string>
+    <string name="close_entry">Done</string>
+    <string name="connection_arrow">›</string>
+    <string name="scanning_into">Scanning into</string>
+    <string name="see_all">See all</string>
+    <string name="history_empty">Your scans will appear here. Use the scanner trigger or enter a barcode.</string>
+    <string name="scan_summary">History: %1$d · Waiting: %2$d</string>
+    <string name="session_choice">%1$s  ▾</string>
 </resources>

@@ -39,9 +39,23 @@ function screen() {
       bounds: b && b.slice(1).map(Number), center: b && [(+b[1] + +b[3]) >> 1, (+b[2] + +b[4]) >> 1] };
   });
 }
-const ui = (id) => screen().find((n) => n.id === id)?.text || '';
+function findControl(predicate) {
+  let nodes = screen(), found = nodes.find(predicate);
+  if (found) return found;
+  const list = nodes.find((n) => n.id === 'recent')?.bounds;
+  if (!list) return null;
+  const x = (list[0] + list[2]) >> 1, high = Math.round(list[1] + (list[3] - list[1]) * .25), low = Math.round(list[1] + (list[3] - list[1]) * .75);
+  // Start at the header, then use overlapping drags so short rows cannot be skipped.
+  for (let i = 0; i < 3; i++) shell('input', 'swipe', String(x), String(high), String(x), String(low), '500');
+  for (let i = 0; i < 7; i++) {
+    nodes = screen(); found = nodes.find(predicate); if (found) return found;
+    shell('input', 'swipe', String(x), String(low), String(x), String(high), '500');
+  }
+  return null;
+}
+const ui = (id) => findControl((n) => n.id === id)?.text || '';
 function tap(predicate) {
-  const node = screen().find(predicate);
+  const node = findControl(predicate);
   if (!node?.center) throw new Error('Control not found');
   shell('input', 'tap', ...node.center.map(String));
 }
@@ -62,6 +76,7 @@ await until(() => shell('getprop', 'sys.boot_completed').trim() === '1', 'emulat
 try { adb('uninstall', PKG); } catch {}
 adb('install', '-r', '../android/app/build/outputs/apk/debug/app-debug.apk');
 for (const permission of ['BLUETOOTH_CONNECT', 'BLUETOOTH_SCAN']) shell('pm', 'grant', PKG, `android.permission.${permission}`);
+const originalFontScale = shell('settings', 'get', 'system', 'font_scale').trim();
 const originalName = shell('settings', 'get', 'global', 'device_name').trim();
 const originalSize = shell('wm', 'size').match(/Override size: (.+)/)?.[1] || 'reset';
 const originalDensity = shell('wm', 'density').match(/Override density: (.+)/)?.[1] || 'reset';
@@ -102,7 +117,7 @@ try {
   tapId('session_mode');
   check('shared-session effect is explained', screen().some((n) => n.text.includes('every scanner')));
   tapText('Warehouse count'); tapText('Change session');
-  await until(() => active.id === 'warehouse' && ui('session_label').includes('Warehouse count'), 'remote session selection');
+  await until(() => active.id === 'warehouse' && ui('session_mode').includes('Warehouse count'), 'remote session selection');
   scan('IN-WAREHOUSE');
   await until(() => received.some((s) => s.data === 'IN-WAREHOUSE'), 'scan after session change');
   check('handheld selects the session for new scans', received.find((s) => s.data === 'IN-WAREHOUSE').sessionId === 'warehouse');
@@ -147,9 +162,16 @@ try {
   await until(() => ui('status_title') === 'Connected to Demo Computer', 'gallery connection');
   for (const data of ['0000123456789', '12345678901234567890', 'BIN-A-0042']) scan(data);
   await until(() => ui('last_scan_meta').includes(' · Sent ·'), 'gallery acknowledgements');
-  check('compact view keeps the session and scans prominent', ui('session_label').includes('Warehouse count') && !screen().some((n) => n.id === 'background'));
+  check('compact view keeps the session and scans prominent', ui('session_mode').includes('Warehouse count') && !screen().some((n) => n.id === 'background'));
+  tapId('nav_scan');
+  check('Scan has a deliberate manual-entry action', screen().some((n) => n.id === 'manual_toggle') && !screen().some((n) => n.id === 'manual'));
   await sleep(3000); screenshot('ct45-android-connected');
+  tapId('nav_history');
+  check('History exposes scan rows without the latest-scan card', screen().some((n) => n.id === 'data') && !screen().some((n) => n.id === 'last_scan'));
+  screenshot('ct45-android-history');
+  tapId('nav_scan');
   tapId('settings_toggle');
+  check('Settings hides the scan history', !screen().some((n) => n.id === 'data'));
   check('scanning settings disclose feedback off by default', ui('feedback_mode').endsWith('Off') && screen().some((n) => n.id === 'background'));
   screenshot('ct45-android-settings');
   tapId('feedback_mode');
@@ -161,7 +183,7 @@ try {
   await until(() => ui('status_title') === 'Connected to Demo Computer', 'reconnect after feedback preference restart');
   tapId('settings_toggle');
   check('feedback preference survives restart', ui('feedback_mode').endsWith('Vibration'));
-  tapId('feedback_mode'); tapText('Off'); tapId('settings_toggle');
+  tapId('feedback_mode'); tapText('Off'); tapId('nav_scan');
   tapId('connection_mode'); screenshot('ct45-android-connection-options'); shell('input', 'keyevent', 'KEYCODE_BACK');
   tapId('session_mode'); screenshot('ct45-android-sessions'); shell('input', 'keyevent', 'KEYCODE_BACK');
   shell('cmd', 'uimode', 'night', 'yes'); launch(); await sleep(2000); screenshot('ct45-android-dark');
@@ -172,7 +194,7 @@ try {
   await until(() => ui('last_scan_meta').includes(' · Waiting ·'), 'gallery waiting scan');
   screenshot('ct45-android-waiting');
   tap((n) => n.id === 'data' && n.text === 'BIN-A-0043'); screenshot('ct45-android-queue-actions');
-  tapText('Copy barcode'); tapId('manual'); screen(); // Let the keyboard finish opening.
+  tapText('Copy barcode'); tapId('manual_toggle'); tapId('manual'); screen(); // Let the keyboard finish opening.
   // Deliver Paste to the focused EditText rather than the emulator's input method.
   shell('input', 'keyevent', 'KEYCODE_BACK'); screen();
   shell('input', 'keyevent', 'KEYCODE_PASTE');
@@ -188,16 +210,31 @@ try {
     const b = compact.find((n) => n.id === id)?.bounds;
     return b && b[3] - b[1] >= 96 && b[3] <= 1232;
   }));
-  shell('input', 'swipe', '360', '1020', '360', '280', '500');
-  await until(() => screen().some((n) => n.id === 'data' && n.text === 'BIN-A-0043'), 'scroll to recent scans');
+  check('small screen can scroll to recent scans', !!findControl((n) => n.id === 'data' && n.text === 'BIN-A-0043'));
   tap((n) => n.id === 'data' && n.text === 'BIN-A-0043');
   check('compact layout can scroll to queue actions', screen().some((n) => n.text.toLowerCase() === 'discard locally'));
   shell('input', 'keyevent', 'KEYCODE_BACK');
   screenshot('ct45-android-compact');
+  tapId('manual_close');
+  tapId('nav_scan');
+  check('entry can close without hiding Scan navigation', screen().some((n) => n.id === 'manual_toggle') && screen().some((n) => n.id === 'nav_scan'));
+  shell('input', 'text', 'WEDGE-001');
+  await until(() => ui('manual') === 'WEDGE-001', 'hardware-keyboard fallback reveals input');
+  check('keyboard wedge fallback opens entry and keeps exact text', ui('manual') === 'WEDGE-001');
+  tapId('manual_close');
+  tapId('nav_history');
+  shell('settings', 'put', 'system', 'font_scale', '1.3'); launch();
+  check('larger text keeps navigation reachable', ['nav_scan', 'nav_history', 'settings_toggle'].every((id) => screen().some((n) => n.id === id)));
+  screenshot('ct45-android-large-text');
+  if (originalFontScale === 'null') shell('settings', 'delete', 'system', 'font_scale');
+  else shell('settings', 'put', 'system', 'font_scale', originalFontScale);
+  tapId('nav_scan'); screenshot('ct45-android-small-scan');
   console.log('All Android polish checks passed');
 } finally {
   if (server) await server.close();
   shell('am', 'force-stop', PKG);
+  if (originalFontScale === 'null') shell('settings', 'delete', 'system', 'font_scale');
+  else shell('settings', 'put', 'system', 'font_scale', originalFontScale);
   if (originalName === 'null') shell('settings', 'delete', 'global', 'device_name');
   else shell('settings', 'put', 'global', 'device_name', originalName);
   shell('wm', 'size', originalSize); shell('wm', 'density', originalDensity);

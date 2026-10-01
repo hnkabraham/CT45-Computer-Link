@@ -2,6 +2,26 @@
 
 Status on September 30, 2026: **development candidate; full physical-device acceptance remains incomplete**. The stable public download is still version 2.0.0.
 
+## September 30 Clear interface
+
+The selected Clear concept is implemented in both apps, with teal accents, readable spacing, and separate workspaces. Android has Scan, History, and Settings navigation, an explicit manual-entry action, and keyboard-wedge fallback. Desktop has Scans, Sessions, and Settings navigation; viewing a session and resuming it remain distinct actions. Pairing and typing controls live in Settings, with connection state always visible. Dark appearance and narrow layouts remain supported. The [Clear gallery](images/clear/README.md) contains captures of the running apps and identifies simulated data.
+
+The new list layout exposed an accessibility failure when an older rejected 70,000-character barcode became visible. List and latest-scan previews now show at most 160 Unicode code points with an ellipsis. The stored scan, row detail, Copy action, and delivery payload keep the full text. The oversized-entry recovery test passed after this fix.
+
+Desktop unit/integration tests passed all 43 checks. Android unit tests passed all 27 checks. Android debug/release builds and lint succeeded with zero errors and the same seven existing warnings; the release APK passed signing and alignment verification.
+
+The source desktop app passed all 51 end-to-end checks. The packaged Apple silicon Mac app passed all 56, including actual packaged Bluetooth helper startup/restart and navigation through the new Sessions and Settings views. Both Apple silicon and Intel DMGs were rebuilt; this turn did not rerun the Intel package under Rosetta or test Windows runtime.
+
+All 29 Android polish assertions passed on the disposable Android 13 emulator, including oversized-entry recovery, session selection, offline discard, Copy/paste, feedback persistence, the three navigation views, 48dp manual controls at 720×1280, keyboard-wedge entry, and navigation with 130% text size. The larger-text screenshots were inspected and clipped controls corrected. The selected light navigation treatment uses `#007C83` text on `#EEF7F7` (4.58:1 contrast); dark uses `#70D4D6` on `#23434B` (6.11:1), calculated from sRGB relative luminance.
+
+The signed Clear APK was installed as an update on the plugged-in CT45P. All 19 functional physical Bluetooth checks passed, followed by the persisted-log reload check: 39 records with 39 unique IDs, one intentionally lost acknowledgement correctly deduplicated, and no replay of the discarded scan. This covered shared session selection, exact barcode text, certificate rejection, adapter off/on, save retry, offline queues across process restart, USB switching, and Home-screen background delivery/reconnection. No additional soak was run. An initial runner attempt stopped before any scan checks because Quick Settings covered the app; the runner now collapses that panel before launching without dismissing a screen lock.
+
+Cleanup completed successfully: Wi-Fi and Bluetooth are on, background scanning is off, the prior test pairing and connection mode are restored, and the requested charging stay-awake setting remains `7` with `mStayOn=true`. PIN protection and management policies were unchanged. The overnight automation remains paused. Private test profiles and raw logs remain outside the repository.
+
+The final large-text adjustment lets the More, connection-help, retry, and session controls grow vertically instead of clipping. These layout changes, the selected-tab contrast adjustment, and keyboard-input fixes followed the radio suite. Tab moves out of the refreshing scan list, while Space still activates a focused button. Printable keys go directly to the editor so fast keyboard-wedge input cannot lose its prefix while the newly opened field gains focus. All four focused emulator checks passed: Tab/Space navigation, exact entry text, Enter submission, and a rapid barcode plus Enter from Settings. The final signed update was installed on the CT45 and startup/navigation controls verified; the device was returned to Home. Transport, queue, and storage code were unchanged by these final adjustments.
+
+Reproduce the focused keyboard checks after the Android polish suite with `ANDROID_SERIAL=emulator-5580 node scripts/android-navigation-e2e.mjs` from `desktop`, substituting the disposable emulator's serial. The script refuses physical devices.
+
 ## September 30 Bluetooth-switch regression
 
 Further plugged-in CT45P testing exposed an active LE channel surviving the main Bluetooth switch being turned off. Android reported `enabled: false` with its radio in `BLE_ON`, and a diagnostic scan still reached the computer. This was reproduced with the existing test identity and was not caused by Hub re-enabling the switch.

@@ -6,13 +6,13 @@ Scan a barcode on a Honeywell CT45 and send it to your Mac or Windows computer. 
 
 The development version adds **encrypted Bluetooth for macOS and Android 10+**. It is not included in the v2.0.0 downloads above. Bluetooth hardware validation is in progress; see [Bluetooth setup and testing](docs/bluetooth.md).
 
-It also adds handheld session selection, copying and locally discarding waiting scans, repeated-barcode markers, clearer connection recovery, and visible desktop Copy buttons. These improvements are included in the development branch, not the stable download.
+It also adds handheld session selection, copying and locally discarding waiting scans, repeated-barcode markers, clearer connection recovery, and visible desktop Copy buttons. These improvements are included in development builds, not the stable download.
 
-The development Android app opens in a compact scanning view. **Scanning settings** reveals background scanning and optional delivery feedback; **More → Compact scanning view** switches to the full view. The session, latest scan, and waiting count remain visible. **Connection help** explains the selected route, and **Retry now** starts an earlier reconnect without changing pairing or switching routes.
+The development apps use the **Clear** interface: calm teal accents, more readable scan history, and separate workspaces. Android has **Scan**, **History**, and **Settings** navigation. Scan shows the latest barcode and three recent entries; History opens the complete retained log. **Enter barcode** opens manual entry when needed. Settings holds background scanning and delivery feedback. The connection card still offers connection choices, help, and retry. On desktop, **Scans** holds the session and export controls, **Sessions** lets you view or resume a job, and **Settings** holds scanner pairing and keyboard output.
 
-[View the v2.1 desktop and Android UI screenshots](docs/images/v2.1/README.md).
+[View the Clear desktop and Android UI screenshots](docs/images/clear/README.md).
 
-![Named scanning session on the desktop](docs/images/desktop.png)
+![Clear development interface with named scanning session](docs/images/clear/ct45-desktop-sessions.png)
 
 - **Pair once:** scan the computer’s QR code with the CT45.
 - **Encrypted connections:** the QR code pins the computer’s TLS certificate. Scans and pairing credentials travel over an encrypted connection.
@@ -101,7 +101,7 @@ If the device shows **Not saved**, keep the app open and free storage. It retrie
 
 **USB fallback:** enable USB debugging, connect the cable, and run `adb reverse tcp:8765 tcp:8765`. If the desktop shows a different port, substitute it on both sides. The QR code includes the loopback route; encrypted connections work over USB too. Repeat the command after reconnecting the cable.
 
-**Bluetooth fallback (development version):** on a Mac, select **Enable Bluetooth**, scan the updated QR code, then choose **Change connection → Bluetooth** on the CT45. Allow Nearby devices when asked. If the pairing code has no Bluetooth endpoint, **Use Wi-Fi / USB** offers a guided switch. This works without a shared network and uses the same pinned TLS encryption. Windows Bluetooth is not implemented; Wi-Fi and USB remain available on Windows. See the [setup guide](docs/bluetooth.md) for requirements and troubleshooting. Android’s **More** menu contains **Unpair**.
+**Bluetooth fallback (development version):** on a Mac, open **Settings → Enable Bluetooth**, scan the updated QR code, then tap the arrow in the CT45 connection card and choose **Bluetooth**. Allow Nearby devices when asked. If the pairing code has no Bluetooth endpoint, **Use Wi-Fi / USB** offers a guided switch. This works without a shared network and uses the same pinned TLS encryption. Windows Bluetooth is not implemented; Wi-Fi and USB remain available on Windows. See the [setup guide](docs/bluetooth.md) for requirements and troubleshooting. Android’s **More** menu contains **Unpair**.
 
 ## Privacy and security
 
@@ -139,12 +139,13 @@ Android integration tests require a **disposable emulator** because they clear a
 cd desktop
 ANDROID_SERIAL=emulator-5580 npm run android-e2e
 ANDROID_SERIAL=emulator-5580 node scripts/android-polish-e2e.mjs
+ANDROID_SERIAL=emulator-5580 node scripts/android-navigation-e2e.mjs
 OLD_APK=/path/to/CT45-Computer-Link-1.0.0-debug.apk \
   ANDROID_SERIAL=emulator-5580 node scripts/android-release-e2e.mjs
 ```
 
 The release test installs v1, upgrades to the signed v2 APK, and checks preserved scans, certificate rejection, offline sessions, and discovery at a new endpoint. The emulator must start without this app installed. mDNS testing needs a network that carries discovery traffic.
 
-The polish test reinstalls the debug app on the selected disposable emulator, then checks oversized queue recovery, session selection, local discard persistence, connection help, compact layouts, and feedback preferences. Set `SCREENSHOT_DIR` to save synthetic UI examples. It does not test Bluetooth radio delivery, Honeywell optics, or physical sound/vibration behavior.
+The polish test reinstalls the debug app on the selected disposable emulator, then checks oversized queue recovery, session selection, local discard persistence, connection help, Clear navigation, small-screen and large-text layouts, and feedback preferences. Set `SCREENSHOT_DIR` to save synthetic UI examples. Run the focused navigation test afterward to check Tab/Space navigation and exact keyboard-wedge capture and submission. These tests do not verify Bluetooth radio delivery, Honeywell optics, or physical sound/vibration behavior.
 
 **Validation limits:** automated tests and emulator checks do not replace testing a physical CT45, Windows, or a particular corporate Wi-Fi network. macOS installers are built for both architectures; Windows is cross-built. See the release notes for the exact checks performed.

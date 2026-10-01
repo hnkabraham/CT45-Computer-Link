@@ -7,11 +7,11 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
-    android:minHeight="52dp"
+    android:minHeight="60dp"
     android:orientation="horizontal"
-    android:paddingStart="14dp"
+    android:paddingStart="12dp"
     android:paddingTop="8dp"
-    android:paddingEnd="14dp"
+    android:paddingEnd="12dp"
     android:paddingBottom="8dp">
 
     <LinearLayout
@@ -28,7 +28,7 @@
             android:fontFamily="monospace"
             android:singleLine="true"
             android:textColor="@color/text"
-            android:textSize="16sp"
+            android:textSize="15sp"
             android:textStyle="bold" />
 
         <TextView

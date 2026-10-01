@@ -116,7 +116,7 @@ async function startFakeDesktop(port, mode) {
 }
 
 // Boot, install, fresh state
-execFileSync(ADB, ['wait-for-device']);
+adb('wait-for-device');
 await until(() => shell('getprop', 'sys.boot_completed').trim() === '1', 180_000);
 adb('install', '-r', APK);
 shell('pm', 'clear', PKG);
@@ -145,7 +145,8 @@ try {
   scan('Box 7 / "fragile" & more', { aimId: ']Q1', codeId: 's' });
   check('spaces and symbols survive', await until(() => received.some((s) => s.data === 'Box 7 / "fragile" & more')));
 
-  // Typed entry
+  // Typed entry is opened explicitly from the focused Scan screen.
+  shell('input', 'tap', ...screen().nodes.find((n) => n.id === 'manual_toggle').center.map(String));
   const field = screen().nodes.find((n) => n.id === 'manual');
   shell('input', 'tap', ...field.center.map(String));
   shell('input', 'text', 'MANUAL-42');
@@ -232,6 +233,7 @@ try {
   scan(link(), { aimId: ']Q1', codeId: 's' });
   await until(() => screen().text('status_title') === 'Connected to Test Mac');
   shell('pm', 'grant', PKG, 'android.permission.POST_NOTIFICATIONS'); // skip Android's dialog
+  shell('input', 'tap', ...screen().nodes.find((n) => n.id === 'settings_toggle').center.map(String));
   const tapSwitch = () => shell('input', 'tap', ...screen().nodes.find((n) => n.id === 'background').center.map(String));
   const serviceRunning = () => shell('dumpsys', 'activity', 'services', PKG).includes('isForeground=true');
   const notification = () => shell('dumpsys', 'notification', '--noredact');
@@ -294,7 +296,7 @@ try {
 
   // Survives a restart without opening the app.
   adb('reboot');
-  execFileSync(ADB, ['wait-for-device']);
+  adb('wait-for-device');
   await until(() => shell('getprop', 'sys.boot_completed').trim() === '1', 180_000);
   check('background mode comes back after a restart', await until(serviceRunning, 60_000));
   shell('input', 'keyevent', 'KEYCODE_WAKEUP');
@@ -311,6 +313,7 @@ try {
   shell('cmd', 'statusbar', 'collapse');
   check('and removes the notification', !notification().includes('Sending scans to Test Mac'));
   launchApp();
+  shell('input', 'tap', ...screen().nodes.find((n) => n.id === 'settings_toggle').center.map(String));
   check('and the switch shows off', await until(() => /checked="false"/.test(adb('exec-out', 'uiautomator', 'dump', '/dev/tty').match(/resource-id="com.henokabraham.ct45tracker:id\/background"[^>]*/)?.[0] ?? '')));
   shell('input', 'keyevent', 'KEYCODE_HOME');
   await sleep(1000);

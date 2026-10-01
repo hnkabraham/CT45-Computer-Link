@@ -95,8 +95,11 @@ function tapControl(control) {
   shell('input', 'tap', String(Math.round((bounds[0] + bounds[2]) / 2)), String(Math.round((bounds[1] + bounds[3]) / 2)));
 }
 async function foreground() {
+  // Starting an activity does not close an already-open Quick Settings shade.
+  shell('cmd', 'statusbar', 'collapse');
   launch();
   if (/Enter your (PIN|password)|Draw your pattern/i.test(screen())) throw new Error('Unlock the CT45 and leave the app open before running this test. Do not remove its screen lock.');
+  tapId('nav_scan');
   seekId('connection_mode');
 }
 async function chooseMode(mode) {
@@ -105,9 +108,8 @@ async function chooseMode(mode) {
 }
 function background(on = undefined) {
   let xml = seekId('settings_toggle');
-  const toggle = node(xml, 'resource-id', `${PKG}:id/settings_toggle`);
-  const expanded = toggle?.includes('text="Hide scanning settings"');
-  if (!expanded) tap(xml, 'resource-id', `${PKG}:id/settings_toggle`);
+  const selected = ['nav_scan', 'nav_history', 'settings_toggle'].find((id) => node(xml, 'resource-id', `${PKG}:id/${id}`)?.includes('selected="true"')) || 'nav_scan';
+  tap(xml, 'resource-id', `${PKG}:id/settings_toggle`);
   xml = seekId('background', 'down');
   const control = node(xml, 'resource-id', `${PKG}:id/background`);
   assert.ok(control, 'Background switch not found');
@@ -116,7 +118,7 @@ function background(on = undefined) {
     tap(xml, 'resource-id', `${PKG}:id/background`);
     assert.equal(node(seekId('background', 'down'), 'resource-id', `${PKG}:id/background`).includes('checked="true"'), on, 'Background preference did not persist');
   }
-  if (!expanded) tapId('settings_toggle');
+  tapId(selected);
   return current;
 }
 const model = shell('getprop', 'ro.product.model').trim();

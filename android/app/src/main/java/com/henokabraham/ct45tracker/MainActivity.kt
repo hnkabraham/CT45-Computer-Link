@@ -20,6 +20,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -49,7 +50,10 @@ class MainActivity : Activity() {
     private lateinit var settingsToggle: Button
     private lateinit var settingsPanel: View
     private lateinit var feedbackMode: Button
-    private var settingsExpanded = false
+    private var page = "scan"
+    private var manualExpanded = false
+    private lateinit var header: View
+    private lateinit var recent: ListView
     private lateinit var useNetwork: Button
     private lateinit var scannerMissing: TextView
     private lateinit var storageWarning: TextView
@@ -63,20 +67,21 @@ class MainActivity : Activity() {
     private val renderListener = { render() }
     // "Turn off" in the notification changes the setting while this screen may be showing.
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key in setOf("background", "compactScanning", "deliveryFeedback")) render()
+        if (key in setOf("background", "deliveryFeedback")) render()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        settingsExpanded = savedInstanceState?.getBoolean("settingsExpanded") ?: false
-        val recent = findViewById<ListView>(R.id.recent)
-        val header = layoutInflater.inflate(R.layout.scan_header, recent, false)
+        page = savedInstanceState?.getString("page")?.takeIf { it in setOf("scan", "history", "settings") } ?: "scan"
+        manualExpanded = savedInstanceState?.getBoolean("manualExpanded") ?: false
+        recent = findViewById(R.id.recent)
+        header = layoutInflater.inflate(R.layout.scan_header, recent, false)
         recent.addHeaderView(header, null, false)
         statusDot = header.findViewById(R.id.status_dot)
         statusTitle = header.findViewById(R.id.status_title)
         statusDetail = header.findViewById(R.id.status_detail)
-        connectionMore = header.findViewById(R.id.connection_more)
+        connectionMore = findViewById(R.id.connection_more)
         waitingStatus = header.findViewById(R.id.waiting_status)
         sessionMode = header.findViewById(R.id.session_mode)
         sessionError = header.findViewById(R.id.session_error)
@@ -86,9 +91,12 @@ class MainActivity : Activity() {
         connectionActions = header.findViewById(R.id.connection_actions)
         retryNow.setOnClickListener { app.link.retryNow() }
         header.findViewById<Button>(R.id.connection_help).setOnClickListener { showConnectionHelp() }
-        settingsToggle = header.findViewById(R.id.settings_toggle)
+        settingsToggle = findViewById(R.id.settings_toggle)
         settingsPanel = header.findViewById(R.id.settings_panel)
-        settingsToggle.setOnClickListener { settingsExpanded = !settingsExpanded; render() }
+        settingsToggle.setOnClickListener { showPage("settings") }
+        findViewById<Button>(R.id.nav_scan).setOnClickListener { showPage("scan") }
+        findViewById<Button>(R.id.nav_history).setOnClickListener { showPage("history") }
+        header.findViewById<Button>(R.id.see_history).setOnClickListener { showPage("history") }
         feedbackMode = header.findViewById(R.id.feedback_mode)
         feedbackMode.setOnClickListener { chooseFeedback() }
         useNetwork = header.findViewById(R.id.use_network)
@@ -121,6 +129,8 @@ class MainActivity : Activity() {
             }
         }
 
+        findViewById<Button>(R.id.manual_toggle).setOnClickListener { showManual(true) }
+        findViewById<Button>(R.id.manual_close).setOnClickListener { showManual(false) }
         findViewById<Button>(R.id.send).setOnClickListener { submitManual() }
         manual.setOnEditorActionListener { _, actionId, event ->
             val enter = event?.keyCode == KeyEvent.KEYCODE_ENTER
@@ -135,16 +145,6 @@ class MainActivity : Activity() {
             PopupMenu(this, connectionMore).apply {
                 menu.add(R.string.connection_help).setOnMenuItemClickListener { showConnectionHelp(); true }
                 menu.add(R.string.delivery_feedback).setOnMenuItemClickListener { chooseFeedback(); true }
-                menu.add(R.string.compact_scanning).apply {
-                    isCheckable = true
-                    isChecked = compactScanning
-                    setOnMenuItemClickListener {
-                        app.prefs.edit().putBoolean("compactScanning", !compactScanning).apply()
-                        settingsExpanded = false
-                        render()
-                        true
-                    }
-                }
                 if (app.link.pairing != null) menu.add(R.string.unpair).setOnMenuItemClickListener { confirmUnpair(); true }
                 show()
             }
@@ -174,11 +174,70 @@ class MainActivity : Activity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean("settingsExpanded", settingsExpanded)
+        outState.putString("page", page)
+        outState.putBoolean("manualExpanded", manualExpanded)
         super.onSaveInstanceState(outState)
     }
 
-    private val compactScanning get() = app.prefs.getBoolean("compactScanning", true)
+    private fun showPage(destination: String) {
+        page = destination
+        hideKeyboard()
+        render()
+        recent.setSelection(0)
+    }
+
+    private fun hideKeyboard() {
+        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(manual.windowToken, 0)
+    }
+
+    private fun showManual(open: Boolean) {
+        manualExpanded = open
+        if (open) page = "scan"
+        render()
+        if (open) {
+            manual.requestFocus()
+            getSystemService(InputMethodManager::class.java).showSoftInput(manual, InputMethodManager.SHOW_IMPLICIT)
+        } else hideKeyboard()
+    }
+
+    // Preserve keyboard-wedge fallback without leaving the input field open during scanning.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // ListView consumes Tab as row navigation. Keep Tab for moving between controls,
+        // even when a connection update refreshes the list; arrow keys still navigate rows.
+        if (::recent.isInitialized && currentFocus === recent && event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode == KeyEvent.KEYCODE_TAB && !event.isCtrlPressed && !event.isAltPressed) {
+            val target = when {
+                event.isShiftPressed -> connectionMore
+                page == "scan" && manualExpanded -> manual
+                page == "scan" -> findViewById<View>(R.id.manual_toggle)
+                else -> findViewById<View>(R.id.nav_scan)
+            }
+            if (target.requestFocus()) return true
+        }
+        if (::manual.isInitialized && event.action == KeyEvent.ACTION_DOWN && event.unicodeChar >= 32 &&
+            !(event.keyCode == KeyEvent.KEYCODE_SPACE && currentFocus is Button) &&
+            !event.isCtrlPressed && !event.isAltPressed) {
+            if (page != "scan" || !manualExpanded) {
+                page = "scan"
+                manualExpanded = true
+                render()
+            }
+            manual.requestFocus()
+            // The newly visible editor may not receive focus until its first layout.
+            // Deliver each character directly so a fast scanner cannot lose its prefix.
+            return manual.dispatchKeyEvent(event)
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        when {
+            page != "scan" -> showPage("scan")
+            manualExpanded -> showManual(false)
+            else -> super.onBackPressed()
+        }
+    }
 
     private fun openSettings(action: String, appDetails: Boolean = false) {
         try { startActivity(Intent(action).apply { if (appDetails) data = Uri.parse("package:$packageName") }) }
@@ -227,10 +286,9 @@ class MainActivity : Activity() {
         super.onResume()
         app.screenShowing = true
         app.scanner.want(HoneywellScanner.User.SCREEN)
-        // If the scanner falls back to typing (claim failed, or no Honeywell service), the
-        // keystrokes land here; Enter sends them.
-        manual.requestFocus()
-        scannerMissing.visibility = if (app.scanner.available) View.GONE else View.VISIBLE
+        // Resume quietly; the entry button opens the keyboard explicitly when needed.
+        hideKeyboard()
+        render()
     }
 
     override fun onPause() {
@@ -322,11 +380,28 @@ class MainActivity : Activity() {
     private fun render() {
         val link = app.link
         background.isChecked = app.background
-        val compact = compactScanning
-        val showSettings = !compact || settingsExpanded
-        settingsPanel.visibility = if (showSettings) View.VISIBLE else View.GONE
-        settingsToggle.visibility = if (compact) View.VISIBLE else View.GONE
-        settingsToggle.text = getString(if (showSettings) R.string.hide_scanning_settings else R.string.scanning_settings)
+        settingsPanel.visibility = if (page == "settings") View.VISIBLE else View.GONE
+        header.findViewById<View>(R.id.session_panel).visibility = if (page == "settings") View.GONE else View.VISIBLE
+        header.findViewById<View>(R.id.scan_overview).visibility = if (page == "scan") View.VISIBLE else View.GONE
+        header.findViewById<View>(R.id.history_heading).visibility = if (page == "settings") View.GONE else View.VISIBLE
+        header.findViewById<TextView>(R.id.history_title).setText(if (page == "history") R.string.nav_history else R.string.recent)
+        header.findViewById<View>(R.id.see_history).visibility = if (page == "scan") View.VISIBLE else View.GONE
+        header.findViewById<View>(R.id.history_empty).visibility = if (page != "settings" && app.log.state.scans.isEmpty()) View.VISIBLE else View.GONE
+        header.findViewById<TextView>(R.id.scan_summary).apply {
+            text = getString(R.string.scan_summary, app.log.state.scans.size, app.log.state.unsent.size)
+            visibility = if (page == "settings") View.GONE else View.VISIBLE
+        }
+        for ((id, name) in listOf(R.id.nav_scan to "scan", R.id.nav_history to "history", R.id.settings_toggle to "settings")) {
+            findViewById<Button>(id).apply {
+                isSelected = page == name
+                setTextColor(getColor(if (isSelected) R.color.accent else R.color.muted))
+                compoundDrawableTintList = ColorStateList.valueOf(currentTextColor)
+            }
+        }
+        val entryOpen = page == "scan" && manualExpanded
+        findViewById<View>(R.id.manual_panel).visibility = if (entryOpen) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.manual_toggle).visibility = if (page == "scan" && !entryOpen) View.VISIBLE else View.GONE
+        scannerMissing.visibility = if (page == "scan" && !app.scanner.available) View.VISIBLE else View.GONE
         feedbackMode.text = getString(R.string.feedback_setting, getString(feedbackLabels[app.feedback.mode.ordinal]))
         connectionMode.contentDescription = getString(R.string.change_connection) + ": " + getString(if (link.bluetoothMode) R.string.connection_bluetooth else R.string.connection_network)
         sessionMode.isEnabled = link.canSelectSession
@@ -339,7 +414,9 @@ class MainActivity : Activity() {
         }
         sessionHint.text = sessionHintText?.let { getString(it) }.orEmpty()
         sessionHint.visibility = if (sessionHintText == null) View.GONE else View.VISIBLE
-        sessionLabel.text = getString(R.string.current_session, link.session.name)
+        sessionMode.text = getString(R.string.session_choice, link.session.name)
+        sessionMode.contentDescription = getString(R.string.change_session) + ": " + link.session.name
+        sessionLabel.setText(R.string.scanning_into)
         connectionActions.visibility = if (link.status is DesktopLink.Status.Connected) View.GONE else View.VISIBLE
         retryNow.visibility = if (link.status is DesktopLink.Status.Retrying || link.status is DesktopLink.Status.Connecting) View.VISIBLE else View.GONE
         retryNow.isEnabled = link.status is DesktopLink.Status.Retrying
@@ -365,7 +442,7 @@ class MainActivity : Activity() {
         }
         statusDot.backgroundTintList = ColorStateList.valueOf(getColor(color))
         statusTitle.text = title
-        statusDetail.text = if (compact && link.status is DesktopLink.Status.Connected)
+        statusDetail.text = if (link.status is DesktopLink.Status.Connected)
             getString(R.string.connection_compact, getString(if (link.bluetoothMode) R.string.connection_bluetooth else R.string.connection_network))
             else detail
         waitingStatus.text = waitingText
@@ -379,10 +456,11 @@ class MainActivity : Activity() {
             lastScan.textSize = 18f
             lastScanMeta.text = ""
         } else {
-            lastScan.text = visible(latest.scan.data)
+            lastScan.text = preview(latest.scan.data)
             lastScan.setTextColor(getColor(R.color.text))
-            lastScan.textSize = 26f
+            lastScan.textSize = 23f
             lastScanMeta.text = getString(R.string.scan_meta, time(latest.scan.scannedAt), getString(stateText(latest)), latest.scan.sessionName)
+            lastScanMeta.setTextColor(getColor(if (!app.log.isSaved(latest.scan.id) || latest.rejected) R.color.bad else if (latest.sent) R.color.ok else R.color.pending))
         }
         adapter.notifyDataSetChanged()
     }
@@ -403,14 +481,14 @@ class MainActivity : Activity() {
     }
 
     inner class ScanAdapter : BaseAdapter() {
-        override fun getCount() = app.log.state.scans.size
+        override fun getCount() = when (page) { "settings" -> 0; "scan" -> minOf(3, app.log.state.scans.size); else -> app.log.state.scans.size }
         override fun getItem(position: Int) = app.log.state.scans[position]
         override fun getItemId(position: Int) = position.toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val view = convertView ?: LayoutInflater.from(parent.context).inflate(R.layout.item_scan, parent, false)
             val item = getItem(position)
-            view.findViewById<TextView>(R.id.data).text = visible(item.scan.data)
+            view.findViewById<TextView>(R.id.data).text = preview(item.scan.data)
             view.findViewById<TextView>(R.id.time).text = time(item.scan.scannedAt)
             view.findViewById<TextView>(R.id.state).apply {
                 text = getString(stateText(item))
@@ -421,6 +499,13 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        // Keep list/accessibility nodes small even for rejected entries from older versions.
+        // Opening a row or copying it still uses the complete, unmodified barcode.
+        fun preview(s: String): String {
+            val end = s.offsetByCodePoints(0, minOf(160, s.codePointCount(0, s.length)))
+            return visible(s.substring(0, end)) + if (end < s.length) "…" else ""
+        }
+
         // Control characters (GS separators in GS1 codes) shown as visible symbols.
         fun visible(s: String) = buildString {
             for (c in s) append(if (c < ' ') (0x2400 + c.code).toChar() else if (c == '\u007f') '␡' else c)

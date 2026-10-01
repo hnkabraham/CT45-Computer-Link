@@ -97,6 +97,7 @@ async function launch() {
       if (page) {
         const cdp = await Cdp.connect(page.webSocketDebuggerUrl);
         await cdp.waitFor('document.readyState === "complete" && !!document.getElementById("qr").naturalWidth');
+        await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
         return { child, cdp };
       }
     } catch {
@@ -143,11 +144,14 @@ try {
     await cdp.eval('window.ct45.setBluetooth(true)');
     check('Bluetooth can start again', await cdp.waitFor('(async () => (await window.ct45.getState()).bluetooth.status === "ready")()', 30000));
   }
+  check('first-run pairing opens in Settings', await cdp.eval('!document.getElementById("page-settings").hidden'));
   await cdp.screenshot('ct45-desktop-empty.png');
 
   // A scanner connects and scans. Connect over loopback: the LAN address can be firewalled.
   const { ws } = await fakeScan(state.pairing.url, ['0123456789012', 'ABC-123', '=cmd|x'], { host: '127.0.0.1' });
   check('shows the scanner as connected', await cdp.waitFor(`${text('connection-text')} === "Fake CT45 connected"`));
+  await cdp.eval('document.getElementById("nav-scans").click(); true');
+  check('Scan navigation hides settings and keeps connection visible', await cdp.eval('document.getElementById("page-settings").hidden && !document.getElementById("page-scans").hidden && document.getElementById("connection").checkVisibility()'));
   check('three scans listed', await cdp.waitFor(`${rows} === 3`));
   check('newest scan first', (await cdp.eval('document.querySelector("#rows tr .data").textContent')) === '=cmd|x');
   check('symbology shown', (await cdp.eval('document.querySelector("#rows tr .kind").textContent')) === 'Code 128');
@@ -194,6 +198,8 @@ try {
   ws.close();
   check('shows disconnect', await cdp.waitFor(`${text('connection-text')} === "Waiting for a scanner"`));
 
+  await cdp.eval('document.getElementById("nav-settings").click(); true');
+  check('typing settings are reachable from navigation', await cdp.eval('document.getElementById("typing").checkVisibility()'));
   // Typing switch persists (no scans are sent while it's on).
   await cdp.eval('document.getElementById("typing").click(); true');
   await sleep(200);
@@ -217,6 +223,8 @@ try {
   }
 
   // New pairing code invalidates the old link.
+  await cdp.eval('document.getElementById("manage-connection").click(); true');
+  check('manage connection reveals pairing', await cdp.eval('document.getElementById("qr").checkVisibility()'));
   const oldLink = (await cdp.eval('window.ct45.getState()')).pairing.url;
   await cdp.eval('document.getElementById("new-code").click(); document.getElementById("new-code-yes").click(); true');
   await cdp.waitFor(`${text('toast')} === "New pairing code ready"`);
@@ -230,6 +238,7 @@ try {
   check('new pairing code works', await cdp.waitFor(`${rows} === 5`));
   again.ws.close();
 
+  await cdp.eval('document.getElementById("nav-scans").click(); true');
   // Clear
   await cdp.eval('document.getElementById("clear").click(); true');
   check('clear asks first', await cdp.eval('!document.getElementById("clear-confirm").hidden') && (await cdp.eval(rows)) === 5);
@@ -247,6 +256,16 @@ try {
   check('offline scan stays in its earlier session', (await cdp.eval(rows)) === 3 && (await cdp.eval('window.ct45.getState()')).scans.find((s) => s.id === 'late').sessionId === 'default');
   await sleep(2600);
   await cdp.screenshot('ct45-desktop-sessions.png');
+  await cdp.eval('document.getElementById("nav-sessions").click(); true');
+  check('Sessions separates active scanning from viewing history', await cdp.eval('document.querySelectorAll(".session-card").length === 2 && document.querySelector(".session-card.active h3").textContent === "Warehouse count"'));
+  await cdp.screenshot('ct45-desktop-session-library.png');
+  await cdp.eval('document.querySelector(".session-card.active .session-actions .btn").click(); true');
+  check('View scans opens the session without changing the active session', await cdp.eval('!document.getElementById("page-scans").hidden && document.getElementById("view-session").value === document.getElementById("active-session").value'));
+  await cdp.eval('document.getElementById("nav-sessions").click(); document.querySelector(".session-card:not(.active) .btn.primary").click(); true');
+  check('Resume session updates the shared active session', await cdp.waitFor('(async () => (await window.ct45.getState()).sessions.activeId === "default")()'));
+  await cdp.eval('document.querySelector(".session-card:not(.active) .btn.primary").click(); true');
+  await cdp.waitFor('document.getElementById("active-session").selectedOptions[0].textContent === "Warehouse count"');
+  await cdp.eval('document.getElementById("nav-scans").click(); true');
   named.ws.close();
   cdp.close();
   await quit(child);

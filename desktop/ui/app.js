@@ -8,6 +8,19 @@ const state = { scans: [], devices: [], pairing: null, settings: {}, sessions: {
 let newestId = null;
 let toastTimer;
 
+function showPage(page) {
+  for (const name of ['scans', 'sessions', 'settings']) {
+    $(`page-${name}`).hidden = name !== page;
+    if (name === page) $(`nav-${name}`).setAttribute('aria-current', 'page');
+    else $(`nav-${name}`).removeAttribute('aria-current');
+  }
+  $('session-form').hidden = true;
+  document.querySelector('.main').scrollTop = 0;
+}
+for (const button of document.querySelectorAll('[data-page]')) button.addEventListener('click', () => showPage(button.dataset.page));
+$('manage-connection').addEventListener('click', () => { showPage('settings'); $('pair').open = true; $('pair-title').focus(); });
+$('session-create').addEventListener('click', () => { $('session-form').hidden = false; $('session-name').focus(); });
+
 // Scanners send separators (GS in GS1 codes) and line endings; show them instead of hiding them.
 function visible(text) {
   return String(text).replace(/[\u0000-\u001f]/g, (c) => String.fromCharCode(0x2400 + c.charCodeAt(0))).replace(/\u007f/g, '␡');
@@ -45,6 +58,8 @@ function renderConnection() {
   box.classList.toggle('on', n > 0);
   $('connection-text').textContent =
     n === 0 ? 'Waiting for a scanner' : n === 1 ? `${state.devices[0].device} connected` : `${n} scanners connected`;
+  $('connection-route').textContent = n === 1 ? `${connectionLabel(state.devices[0])} · Encrypted` : n > 1 ? 'Encrypted connections' : 'Pair once. Scan anywhere nearby.';
+  $('manage-connection').textContent = n ? 'Manage connection' : 'Connect a scanner';
 
   $('devices').hidden = n === 0;
   $('device-list').replaceChildren(
@@ -90,7 +105,7 @@ function renderBluetooth() {
   button.disabled = b.status === 'starting';
   button.textContent = b.status === 'starting' ? 'Starting Bluetooth…' : b.enabled || ['ready', 'waiting'].includes(b.status) ? 'Turn off Bluetooth connection' : 'Enable Bluetooth';
   $('bluetooth-status').textContent = b.status === 'ready'
-    ? 'Bluetooth ready. Scan this QR code, then choose Change connection → Bluetooth on the CT45. Allow Nearby devices when asked.'
+    ? 'Bluetooth ready. Scan this QR code, then tap the connection-card arrow and choose Bluetooth on the CT45. Allow Nearby devices when asked.'
     : ['error', 'waiting'].includes(b.status) ? b.message
     : b.status === 'unsupported' ? 'Bluetooth connections are currently available on macOS.'
     : 'Bluetooth works nearby without a shared Wi-Fi network. Your scans stay encrypted.';
@@ -103,6 +118,7 @@ function filteredScans() {
 }
 
 function renderScans() {
+  renderSessionList();
   const viewId = $('view-session').value;
   const total = state.scans.filter((s) => !viewId || (s.sessionId || 'default') === viewId).length;
   const list = filteredScans();
@@ -150,6 +166,37 @@ function renderSessions() {
   $('active-session').value = state.sessions.activeId;
   $('view-session').replaceChildren(el('option', { value: '', textContent: 'All sessions' }), ...options());
   $('view-session').value = state.sessions.items.some((s) => s.id === view) ? view : '';
+  renderSessionList();
+}
+
+function renderSessionList() {
+  const focused = $('session-list').contains(document.activeElement) ? document.activeElement.id : null;
+  const counts = new Map();
+  for (const scan of state.scans) {
+    const id = scan.sessionId || 'default';
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  $('session-list').replaceChildren(...state.sessions.items.map((session) => {
+    const active = session.id === state.sessions.activeId;
+    const view = el('button', { id: `session-view-${session.id}`, className: 'btn', type: 'button', textContent: 'View scans', ariaLabel: `View scans in ${session.name}` });
+    view.addEventListener('click', () => {
+      $('view-session').value = session.id;
+      $('search').value = '';
+      $('clear-confirm').hidden = true;
+      showPage('scans'); renderScans(); $('view-session').focus();
+    });
+    const resume = el('button', { id: `session-resume-${session.id}`, className: 'btn primary', type: 'button', textContent: active ? 'Active session' : 'Resume session', disabled: active, ariaLabel: `${active ? 'Active session' : 'Resume session'}: ${session.name}` });
+    resume.addEventListener('click', async () => {
+      resume.disabled = true;
+      try { state.sessions = await window.ct45.activateSession(session.id); renderSessions(); toast(`Scanning into ${session.name}`); }
+      catch { resume.disabled = false; toast('Could not save the active session.'); }
+    });
+    const count = counts.get(session.id) || 0;
+    return el('article', { className: `session-card${active ? ' active' : ''}` },
+      el('div', { className: 'session-info' }, el('h3', { textContent: session.name }), el('p', { className: 'muted small', textContent: plural(count, 'scan') })),
+      el('div', { className: 'session-actions' }, view, resume));
+  }));
+  if (focused) $(focused)?.focus({ preventScroll: true });
 }
 
 function render() {
@@ -193,6 +240,7 @@ window.ct45.on('typing', (result) => {
   const status = $('typing-status');
   status.hidden = false;
   $('permission').hidden = result.reason !== 'permission';
+  if (result.reason === 'permission' && $('page-settings').hidden) toast('Keyboard output blocked. Open Settings for permission help.');
   if (result.ok) status.textContent = `Typed ${visible(result.data)}`;
   else if (result.reason === 'focused') status.textContent = 'Not typed: CT45 Computer Link was the active window. Click into the app you want scans typed into.';
   else if (result.reason === 'delayed') status.textContent = `Not typed: ${visible(result.data)} was scanned while the CT45 was disconnected. It's in the list.`;
@@ -244,6 +292,7 @@ $('session-form').addEventListener('submit', async (e) => {
     $('search').value = '';
     $('session-form').hidden = true;
     $('session-name').value = '';
+    showPage('scans');
     renderScans();
     toast(`Started ${name}`);
   } catch { toast('Could not save the new session. Check available disk space.'); }
@@ -289,6 +338,7 @@ $('open-accessibility').addEventListener('click', () => window.ct45.openAccessib
 window.ct45.getState().then((initial) => {
   Object.assign(state, initial);
   render();
+  if (!state.scans.length && !state.devices.length) showPage('settings');
 });
 // Keep "since 9:14" and today-vs-yesterday labels current.
 setInterval(() => {
