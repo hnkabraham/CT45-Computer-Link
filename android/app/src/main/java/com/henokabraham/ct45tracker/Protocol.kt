@@ -10,12 +10,13 @@ import java.net.URLDecoder
  */
 object Protocol {
     const val PAIR_PREFIX = "ct45tracker://pair"
+    const val MAX_DATA_LENGTH = 8192
 
     // Close codes from the computer that mean retrying is pointless until the user re-pairs.
     const val CLOSE_BAD_TOKEN = 4001
     const val CLOSE_REPAIRED = 4003
 
-    data class Pairing(val hosts: List<String>, val port: Int, val token: String, val name: String, val computerId: String = "", val fingerprint: String = "")
+    data class Pairing(val hosts: List<String>, val port: Int, val token: String, val name: String, val computerId: String = "", val fingerprint: String = "", val bluetoothService: String = "")
 
     data class Session(val id: String = "default", val name: String = "General")
 
@@ -30,10 +31,11 @@ object Protocol {
     )
 
     sealed class ServerMessage {
-        data class Welcome(val name: String, val session: Session) : ServerMessage()
-        data class SessionChanged(val session: Session) : ServerMessage()
+        data class Welcome(val name: String, val session: Session, val sessions: List<Session> = emptyList(), val sessionControl: Boolean = false) : ServerMessage()
+        data class SessionChanged(val session: Session, val sessions: List<Session> = emptyList()) : ServerMessage()
+        data class SessionSelected(val requestId: String) : ServerMessage()
         data class Ack(val id: String) : ServerMessage()
-        data class Error(val code: String, val message: String, val id: String?) : ServerMessage()
+        data class Error(val code: String, val message: String, val id: String?, val requestId: String? = null) : ServerMessage()
         data object Unknown : ServerMessage()
     }
 
@@ -55,7 +57,7 @@ object Protocol {
         val port = params["p"]?.toIntOrNull() ?: return null
         val token = params["t"].orEmpty()
         if (params["v"] != "2") return null
-        return validatedPairing(Pairing(hosts, port, token, params["n"].orEmpty(), params["id"].orEmpty(), params["fp"].orEmpty()))
+        return validatedPairing(Pairing(hosts, port, token, params["n"].orEmpty(), params["id"].orEmpty(), params["fp"].orEmpty(), params["bt"].orEmpty()))
     }
 
     /** Use the same URL builder for validation and connection, with no DNS lookup. */
@@ -65,8 +67,9 @@ object Protocol {
     fun validatedPairing(p: Pairing): Pairing? {
         if (p.hosts.isEmpty() || p.port !in 1..65535 || p.token.isEmpty() || p.token.length > 128) return null
         if (!p.computerId.matches(Regex("[a-zA-Z0-9-]{1,64}")) || !p.fingerprint.matches(Regex("[a-f0-9]{64}"))) return null
+        if (p.bluetoothService.isNotEmpty() && !p.bluetoothService.matches(Regex("[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"))) return null
         return try {
-            p.copy(hosts = p.hosts.map { serverUrl(it, p.port).host }.distinct())
+            p.copy(hosts = p.hosts.map { serverUrl(it, p.port).host }.distinct(), bluetoothService = p.bluetoothService.lowercase(java.util.Locale.ROOT))
         } catch (e: IllegalArgumentException) {
             null
         }
@@ -78,7 +81,7 @@ object Protocol {
         JSONObject()
             .put("type", "hello")
             .put("token", token)
-            .put("device", device)
+            .put("device", device.take(100))
             .put("app", appVersion)
             .toString()
 
@@ -96,6 +99,21 @@ object Protocol {
             .put("sessionName", scan.sessionName)
             .toString()
 
+    fun canSend(scan: Scan) = scan.data.length in 1..MAX_DATA_LENGTH && scan.id.length in 1..64 &&
+        scan.aimId.length <= 8 && scan.codeId.length <= 8 && scan.sessionId.length <= 64 && scan.sessionName.length <= 80
+
+    fun selectSession(sessionId: String, requestId: String): String = JSONObject()
+        .put("type", "select-session").put("sessionId", sessionId).put("requestId", requestId).toString()
+
+    private fun sessions(o: JSONObject): List<Session> {
+        val list = o.optJSONArray("sessions") ?: return emptyList()
+        return (0 until list.length()).mapNotNull { i ->
+            val s = list.optJSONObject(i) ?: return@mapNotNull null
+            val id = s.optString("id"); val name = s.optString("name")
+            if (id.length in 1..64 && name.length in 1..80) Session(id, name) else null
+        }.distinctBy { it.id }
+    }
+
     private fun session(o: JSONObject): Session {
         val s = o.optJSONObject("session") ?: return Session()
         val id = s.optString("id")
@@ -110,13 +128,16 @@ object Protocol {
             return ServerMessage.Unknown
         }
         return when (o.optString("type")) {
-            "welcome" -> if (o.optInt("version") == 2) ServerMessage.Welcome(o.optString("name"), session(o)) else ServerMessage.Unknown
-            "session" -> ServerMessage.SessionChanged(session(o))
+            "welcome" -> if (o.optInt("version") == 2) ServerMessage.Welcome(o.optString("name"), session(o), sessions(o),
+                o.optJSONArray("capabilities")?.let { a -> (0 until a.length()).any { a.optString(it) == "session-control" } } == true) else ServerMessage.Unknown
+            "session" -> ServerMessage.SessionChanged(session(o), sessions(o))
+            "session-selected" -> ServerMessage.SessionSelected(o.optString("requestId"))
             "ack" -> ServerMessage.Ack(o.optString("id"))
             "error" -> ServerMessage.Error(
                 o.optString("code"),
                 o.optString("message"),
                 if (o.has("id")) o.optString("id") else null,
+                if (o.has("requestId")) o.optString("requestId") else null,
             )
             else -> ServerMessage.Unknown
         }

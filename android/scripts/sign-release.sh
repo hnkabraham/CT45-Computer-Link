@@ -7,7 +7,7 @@ sdk_dir="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 tools_dir="$sdk_dir/build-tools/${ANDROID_BUILD_TOOLS_VERSION:-35.0.0}"
 android_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 input="$android_dir/app/build/outputs/apk/release/app-release-unsigned.apk"
-output="${1:-$android_dir/app/build/outputs/apk/release/CT45-Computer-Link-2.0.0.apk}"
+output="${1:-$android_dir/app/build/outputs/apk/release/CT45-Computer-Link-2.1.0.apk}"
 
 "$tools_dir/apksigner" sign --debuggable-apk-permitted false \
   --rotation-min-sdk-version 28 --lineage "$signing_dir/signing-lineage.bin" \

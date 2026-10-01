@@ -118,4 +118,40 @@ class ScanLogTest {
         assertEquals(100, state.scans.size)
         assertTrue(state.unsent.isEmpty())
     }
+
+    @Test
+    fun `discard is durable retains its audit record and tolerates a late acknowledgement`() {
+        val storage = Storage()
+        storage.log.add(scan("one"))
+        storage.log.add(scan("two"))
+        assertTrue(storage.log.discard("one"))
+        val rebooted = Storage(storage.disk)
+        assertEquals(listOf("two"), rebooted.log.outbox.map { it.id })
+        assertTrue(rebooted.log.state.scans.first { it.scan.id == "one" }.discarded)
+        rebooted.log.markSent("one") // Already delivered, but its ack arrived after discard.
+        rebooted.runNext()
+        val record = ScanLogState.fromJson(rebooted.disk).scans.first { it.scan.id == "one" }
+        assertTrue(record.sent)
+        assertTrue(record.discarded)
+        var state = rebooted.log.state
+        repeat(150) { state = state.add(scan("new-$it")).markSent("new-$it") }
+        assertTrue(state.scans.any { it.scan.id == "one" && it.discarded })
+    }
+
+    @Test
+    fun `failed or ineligible discards leave saved scans in their original state`() {
+        val storage = Storage()
+        storage.log.add(scan("one"))
+        storage.writable = false
+        assertFalse(storage.log.discard("one"))
+        assertEquals(listOf("one"), storage.log.outbox.map { it.id })
+        assertFalse(ScanLogState.fromJson(storage.disk).scans.single().discarded)
+        storage.log.add(scan("unsaved"))
+        assertFalse(storage.log.discard("unsaved"))
+        storage.writable = true
+        storage.runNext()
+        storage.log.markSent("one")
+        assertFalse(storage.log.discard("one"))
+        assertFalse(storage.log.discard("unknown"))
+    }
 }

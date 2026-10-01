@@ -11,6 +11,37 @@ class ProtocolTest {
     private val pin = "a".repeat(64)
     private val security = "v=2&id=test-computer&fp=$pin&"
     @Test
+    fun `oversized saved entries are excluded while exact valid barcode text is retained`() {
+        val normal = Protocol.Scan("id", "0".repeat(8192), 1)
+        assertTrue(Protocol.canSend(normal))
+        assertFalse(Protocol.canSend(normal.copy(data = "x".repeat(70000))))
+        assertFalse(Protocol.canSend(normal.copy(codeId = "x".repeat(9))))
+        assertEquals(normal.data, JSONObject(Protocol.scan(normal, 2)).getString("data"))
+        assertEquals(100, JSONObject(Protocol.hello("token", "D".repeat(101), "2.1")).getString("device").length)
+    }
+
+    @Test
+    fun `session catalog capability and request replies are separate from scan acknowledgements`() {
+        val welcome = Protocol.parseServer("""{"type":"welcome","version":2,"name":"Mac","session":{"id":"a","name":"Morning"},"sessions":[{"id":"a","name":"Morning"},{"id":"b","name":"Evening"},{"id":"","name":"bad"}],"capabilities":["session-control"]}""") as Protocol.ServerMessage.Welcome
+        assertTrue(welcome.sessionControl)
+        assertEquals(listOf("a", "b"), welcome.sessions.map { it.id })
+        assertEquals("b", JSONObject(Protocol.selectSession("b", "request")).getString("sessionId"))
+        assertEquals(Protocol.ServerMessage.SessionSelected("request"), Protocol.parseServer("""{"type":"session-selected","requestId":"request"}"""))
+        val error = Protocol.parseServer("""{"type":"error","code":"session-unavailable","requestId":"request","message":"missing"}""") as Protocol.ServerMessage.Error
+        assertNull(error.id)
+        assertEquals("request", error.requestId)
+    }
+    @Test
+    fun `Bluetooth pairing adds a validated service UUID without weakening certificate verification`() {
+        val base = "ct45tracker://pair?${security}h=127.0.0.1&p=8765&t=test"
+        assertEquals("", Protocol.parsePairing(base)?.bluetoothService)
+        assertEquals("e89c1e7a-0450-4d82-9b4c-b5c3f155cf45", Protocol.parsePairing("$base&bt=E89C1E7A-0450-4D82-9B4C-B5C3F155CF45")?.bluetoothService)
+        for (bad in listOf("broken", "AA:BB:CC:DD:EE", "AA:BB:CC:DD:EE:GG", "AA:BB:CC:DD:EE:FF/other")) {
+            assertNull(Protocol.parsePairing("$base&bt=$bad"))
+        }
+        assertNull(Protocol.parsePairing("$base&bt=e89c1e7a-0450-4d82-9b4c-b5c3f155cf45".replace("fp=$pin", "fp=wrong")))
+    }
+    @Test
     fun `legacy pairing never downgrades encryption`() {
         assertNull(Protocol.parsePairing("ct45tracker://pair?h=localhost&p=8765&t=secret"))
         assertNull(Protocol.parsePairing("ct45tracker://pair?v=2&id=test&fp=bad&h=localhost&p=8765&t=secret"))

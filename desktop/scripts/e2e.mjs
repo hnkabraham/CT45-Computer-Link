@@ -19,6 +19,7 @@ const PORT = 18765;
 const DEBUG_PORT = 19333;
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'ct45-e2e-'));
 const shots = process.env.SCREENSHOT_DIR;
+const testBluetooth = process.env.CT45_BLUETOOTH_E2E === '1' && process.platform === 'darwin';
 if (shots) fs.mkdirSync(shots, { recursive: true });
 
 let failures = 0;
@@ -133,6 +134,15 @@ try {
   check('pairing QR rendered', (await cdp.eval('document.getElementById("qr").naturalWidth')) > 100);
   check('pairing panel open while nothing is connected', await cdp.eval('document.getElementById("pair").open'));
   check('typing off by default', (await cdp.eval('document.getElementById("typing").checked')) === false && readSettings().typing === false);
+  check('Bluetooth starts disabled without changing network pairing', !readSettings().bluetooth && !new URL(state.pairing.url).searchParams.has('bt'));
+  if (testBluetooth) {
+    await cdp.eval('document.getElementById("bluetooth-toggle").click(); true');
+    check('packaged Bluetooth helper starts and adds its identity to the QR', await cdp.waitFor('(async () => { const s = await window.ct45.getState(); return s.bluetooth.status === "ready" && new URL(s.pairing.url).searchParams.get("bt") === s.bluetooth.serviceId; })()', 30000));
+    await cdp.eval('Promise.all([window.ct45.setBluetooth(true), window.ct45.setBluetooth(false)])');
+    check('rapid Bluetooth enable/disable leaves no stale QR endpoint', await cdp.waitFor('(async () => { const s = await window.ct45.getState(); return s.bluetooth.status === "off" && !new URL(s.pairing.url).searchParams.has("bt"); })()'));
+    await cdp.eval('window.ct45.setBluetooth(true)');
+    check('Bluetooth can start again', await cdp.waitFor('(async () => (await window.ct45.getState()).bluetooth.status === "ready")()', 30000));
+  }
   await cdp.screenshot('ct45-desktop-empty.png');
 
   // A scanner connects and scans. Connect over loopback: the LAN address can be firewalled.
@@ -156,12 +166,19 @@ try {
   check('search filters', (await cdp.eval(rows)) === 1 && (await cdp.eval(text('count'))) === '1 match of 4 scans');
   await cdp.eval('const s3 = document.getElementById("search"); s3.value = "01"; s3.dispatchEvent(new Event("input")); true');
   check('several matches read correctly', (await cdp.eval(text('count'))) === '2 matches of 4 scans', await cdp.eval(text('count')));
+  await cdp.eval('const missing = document.getElementById("search"); missing.value = "NO-MATCH-TEST"; missing.dispatchEvent(new Event("input")); true');
+  check('unmatched search explains the empty view', await cdp.eval('!document.getElementById("empty").hidden && document.getElementById("empty-title").textContent === "No matching scans"'));
+  check('empty results disable copy and export without disabling session clear', await cdp.eval('["copy-all", "export", "export-csv"].every(id => document.getElementById(id).disabled) && !document.getElementById("clear").disabled'));
+  await cdp.screenshot('ct45-desktop-no-matches.png');
+  await cdp.eval('document.getElementById("clear-search").click(); true');
+  check('clear search restores scans and keyboard focus', (await cdp.eval(rows)) === 4 && await cdp.eval('document.activeElement.id === "search" && document.getElementById("empty").hidden'));
   await cdp.eval('const s2 = document.getElementById("search"); s2.value = ""; s2.dispatchEvent(new Event("input")); true');
 
   // Copy
   await cdp.eval('document.querySelector("#rows tr:nth-child(3)").click(); true');
   check('clicking a row copies it', await cdp.waitFor(`${text('toast')} === "Copied ABC-123"`));
 
+  if (shots) await sleep(2600); // Let the copy toast clear before documenting the interface.
   await cdp.screenshot('ct45-desktop-light.png');
   await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
   await sleep(200);
@@ -193,6 +210,11 @@ try {
   await quit(child);
   ({ child, cdp } = await launch());
   check('scans survive a restart', await cdp.waitFor(`${rows} === 4`));
+  if (testBluetooth) {
+    check('Bluetooth preference survives a desktop restart', readSettings().bluetooth && await cdp.waitFor('(async () => (await window.ct45.getState()).bluetooth.status === "ready")()', 30000));
+    await cdp.eval('window.ct45.setBluetooth(false)');
+    check('Bluetooth can be disabled after restart', (await cdp.eval('window.ct45.getState()')).bluetooth.status === 'off');
+  }
 
   // New pairing code invalidates the old link.
   const oldLink = (await cdp.eval('window.ct45.getState()')).pairing.url;
@@ -234,6 +256,20 @@ try {
   check('clearing one session keeps the other session', await cdp.waitFor('document.querySelectorAll("#rows tr").length === 0') && (await cdp.eval('window.ct45.getState()')).scans.length === 1);
   await cdp.eval('document.getElementById("active-session").value = "default"; document.getElementById("active-session").dispatchEvent(new Event("change")); true');
   check('an earlier session can be resumed', await cdp.waitFor('(async () => (await window.ct45.getState()).sessions.activeId === "default")()'));
+
+  const repeats = await fakeScan(newLink, ['BIN-A-0042', 'BIN-A-0042'], { host: '127.0.0.1', device: 'Demo CT45' });
+  await cdp.eval('document.getElementById("view-session").value = ""; document.getElementById("view-session").dispatchEvent(new Event("change")); true');
+  check('intentional repeated scans are kept and labeled', await cdp.waitFor('document.querySelectorAll(".repeat-badge").length === 2') && (await cdp.eval('window.ct45.getState()')).scans.length === 3);
+  check('copy has a keyboard-accessible button', await cdp.eval('document.querySelector("#rows .copy-scan").tagName === "BUTTON"'));
+  await cdp.eval('document.querySelector("#rows .copy-scan").click(); true');
+  check('copy button copies only the barcode', await cdp.waitFor(`${text('toast')} === "Copied BIN-A-0042"`));
+  check('loopback does not pretend to be USB', await cdp.eval('document.querySelector("#device-list .meta").textContent.startsWith("Local connection")'));
+  const target = (await cdp.eval('window.ct45.getState()')).sessions.items.find((s) => s.name === 'Warehouse count');
+  repeats.ws.send(JSON.stringify({ type: 'select-session', sessionId: target.id, requestId: 'from-handheld' }));
+  check('handheld session selection updates the desktop control', await cdp.waitFor('document.getElementById("active-session").selectedOptions[0].textContent === "Warehouse count"'));
+  await sleep(2600);
+  await cdp.screenshot('ct45-desktop-repeats.png');
+  repeats.ws.close();
 
 } finally {
   cdp.close();

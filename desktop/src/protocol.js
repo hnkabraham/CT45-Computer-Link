@@ -18,9 +18,10 @@ export function tokensMatch(expected, given) {
 }
 
 // The QR code the CT45 scans to pair. Kept short so the code stays easy to scan from a screen.
-export function pairingUrl({ hosts, port, token, name, computerId, fingerprint }) {
+export function pairingUrl({ hosts, port, token, name, computerId, fingerprint, bluetoothService }) {
   const q = new URLSearchParams({ v: '2', h: hosts.join(','), p: String(port), t: token, id: computerId, fp: fingerprint });
   if (name) q.set('n', name);
+  if (bluetoothService) q.set('bt', bluetoothService);
   return `${PAIR_PREFIX}?${q}`;
 }
 
@@ -34,7 +35,9 @@ export function parsePairingUrl(text) {
   const computerId = q.get('id');
   const fingerprint = q.get('fp');
   if (q.get('v') !== '2' || !/^[a-zA-Z0-9-]{1,64}$/.test(computerId || '') || !/^[a-f0-9]{64}$/.test(fingerprint || '')) return null;
-  return { hosts, port, token, name: q.get('n') ?? '', computerId, fingerprint };
+  const bluetoothService = q.get('bt');
+  if (bluetoothService && !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(bluetoothService)) return null;
+  return { hosts, port, token, name: q.get('n') ?? '', computerId, fingerprint, ...(bluetoothService && { bluetoothService: bluetoothService.toLowerCase() }) };
 }
 
 const isShortString = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
@@ -58,6 +61,9 @@ export function parseClientMessage(raw) {
 
 function checkMessage(m) {
   switch (m.type) {
+    case 'select-session':
+      if (!isShortString(m.sessionId, 64) || !isShortString(m.requestId, 64)) return { ok: false, error: 'invalid session selection' };
+      return { ok: true, msg: { type: m.type, sessionId: m.sessionId, requestId: m.requestId } };
     case 'hello':
       if (!isShortString(m.token, 128)) return { ok: false, error: 'hello needs a token' };
       if (!optionalString(m.device, 100)) return { ok: false, error: 'bad device name' };

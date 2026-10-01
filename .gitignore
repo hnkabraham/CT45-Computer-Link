@@ -1,6 +1,7 @@
 .DS_Store
 node_modules/
 desktop/dist/
+desktop/native/bin/
 android/.gradle/
 android/.kotlin/
 android/build/

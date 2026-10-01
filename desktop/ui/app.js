@@ -1,4 +1,5 @@
 'use strict';
+import { repeatedBarcodes, connectionLabel } from './scan-view.js';
 
 const MAX_ROWS = 500;
 const $ = (id) => document.getElementById(id);
@@ -48,7 +49,7 @@ function renderConnection() {
   $('devices').hidden = n === 0;
   $('device-list').replaceChildren(
     ...state.devices.map((d) =>
-      el('li', {}, el('span', { className: 'name', textContent: d.device }), el('span', { className: 'meta', textContent: `${d.address} · since ${formatTime(d.since)}` })),
+      el('li', {}, el('span', { className: 'name', textContent: d.device }), el('span', { className: 'meta', title: d.address, textContent: `${connectionLabel(d)} · since ${formatTime(d.since)}` })),
     ),
   );
   // Once something is connected the QR code only matters for adding another scanner.
@@ -82,6 +83,19 @@ function renderSettings() {
   }
 }
 
+function renderBluetooth() {
+  const b = state.bluetooth || { status: 'off' };
+  const button = $('bluetooth-toggle');
+  button.hidden = b.status === 'unsupported';
+  button.disabled = b.status === 'starting';
+  button.textContent = b.status === 'starting' ? 'Starting Bluetooth…' : b.enabled || ['ready', 'waiting'].includes(b.status) ? 'Turn off Bluetooth connection' : 'Enable Bluetooth';
+  $('bluetooth-status').textContent = b.status === 'ready'
+    ? 'Bluetooth ready. Scan this QR code, then choose Change connection → Bluetooth on the CT45. Allow Nearby devices when asked.'
+    : ['error', 'waiting'].includes(b.status) ? b.message
+    : b.status === 'unsupported' ? 'Bluetooth connections are currently available on macOS.'
+    : 'Bluetooth works nearby without a shared Wi-Fi network. Your scans stay encrypted.';
+}
+
 function filteredScans() {
   const q = $('search').value.trim().toLowerCase();
   const id = $('view-session').value;
@@ -94,22 +108,31 @@ function renderScans() {
   const list = filteredScans();
   const q = $('search').value.trim();
   $('count').textContent = q ? `${plural(list.length, 'match', 'matches')} of ${plural(total, 'scan')}` : plural(total, 'scan');
-  $('count').hidden = total === 0;
-  $('empty').hidden = total > 0;
+  $('count').hidden = total === 0 && !q;
+  $('empty').hidden = list.length > 0;
+  $('empty-title').textContent = q ? 'No matching scans' : viewId ? 'No scans in this session' : 'No scans yet';
+  $('empty-hint').textContent = q ? 'Try another search or clear it to see the scans in this view.'
+    : viewId ? 'Choose this session under Scanning into to add scans, or show another session.'
+    : 'Scan a barcode with the CT45 and it shows up here.';
+  $('clear-search').hidden = !q;
   $('table').hidden = list.length === 0;
-  for (const id of ['copy-all', 'export', 'export-csv', 'clear']) $(id).disabled = total === 0;
+  for (const id of ['copy-all', 'export', 'export-csv']) $(id).disabled = list.length === 0;
+  $('clear').disabled = total === 0;
 
   const shown = list.slice(0, MAX_ROWS);
+  const repeats = repeatedBarcodes(state.scans);
   $('rows').replaceChildren(
     ...shown.map((s) => {
       const row = el(
         'tr',
         { title: 'Click to copy' },
         el('td', { className: 'time', textContent: formatTime(s.scannedAt) }),
-        el('td', { className: 'data', textContent: visible(s.data) }),
+        el('td', { className: 'data' }, el('span', { textContent: visible(s.data) }),
+          ...(repeats(s) > 1 ? [el('span', { className: 'repeat-badge', title: 'Repeated barcode in this session; every scan is kept', textContent: `Seen ${repeats(s)}×` })] : [])),
         el('td', { className: 'kind', textContent: s.symbology || '—' }),
         el('td', { className: 'device', textContent: s.device }),
         el('td', { className: 'session', textContent: s.sessionName || 'General' }),
+        el('td', { className: 'row-action' }, el('button', { type: 'button', className: 'btn small copy-scan', textContent: 'Copy', ariaLabel: `Copy barcode ${visible(s.data)}` })),
       );
       row.dataset.id = s.id;
       if (s.id === newestId) row.classList.add('new');
@@ -134,6 +157,7 @@ function render() {
   renderConnection();
   renderPairing();
   renderSettings();
+  renderBluetooth();
   renderScans();
 }
 
@@ -143,6 +167,11 @@ async function saveSettings(patch) {
 }
 
 window.ct45.on('sessions', (sessions) => { state.sessions = sessions; renderSessions(); renderScans(); });
+window.ct45.on('bluetooth', (bluetooth) => { state.bluetooth = bluetooth; renderBluetooth(); });
+$('bluetooth-toggle').addEventListener('click', async () => {
+  try { state.bluetooth = await window.ct45.setBluetooth(!(state.bluetooth?.enabled || ['ready', 'waiting'].includes(state.bluetooth?.status))); renderBluetooth(); }
+  catch { toast('Could not change Bluetooth settings.'); }
+});
 
 // Events from the main process
 window.ct45.on('scan', (scan) => {
@@ -181,6 +210,7 @@ $('rows').addEventListener('click', async (e) => {
 });
 
 $('search').addEventListener('input', renderScans);
+$('clear-search').addEventListener('click', () => { $('search').value = ''; renderScans(); $('search').focus(); });
 
 $('copy-all').addEventListener('click', async () => {
   const list = filteredScans();
@@ -244,10 +274,12 @@ $('new-code').addEventListener('click', () => {
 });
 $('new-code-no').addEventListener('click', () => ($('new-code-confirm').hidden = true));
 $('new-code-yes').addEventListener('click', async () => {
-  state.pairing = await window.ct45.newPairingCode();
-  $('new-code-confirm').hidden = true;
-  renderPairing();
-  toast('New pairing code ready');
+  try {
+    state.pairing = await window.ct45.newPairingCode();
+    $('new-code-confirm').hidden = true;
+    renderPairing();
+    toast('New pairing code ready');
+  } catch { toast('Could not create a new pairing code. Check available disk space and try again.'); }
 });
 
 $('typing').addEventListener('change', (e) => saveSettings({ typing: e.target.checked }));

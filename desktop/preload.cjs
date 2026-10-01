@@ -1,10 +1,11 @@
 // The only bridge between the window and the main process. Sandboxed preloads must be CommonJS.
 const { contextBridge, ipcRenderer } = require('electron');
 
-const EVENTS = ['scan', 'devices', 'pairing', 'typing', 'sessions'];
+const EVENTS = ['scan', 'devices', 'pairing', 'typing', 'sessions', 'bluetooth'];
 
 contextBridge.exposeInMainWorld('ct45', {
   getState: () => ipcRenderer.invoke('get-state'),
+  setBluetooth: (enabled) => ipcRenderer.invoke('set-bluetooth', enabled),
   setSettings: (patch) => ipcRenderer.invoke('set-settings', patch),
   copy: (text) => ipcRenderer.invoke('copy', text),
   exportScans: (options) => ipcRenderer.invoke('export-scans', options),
