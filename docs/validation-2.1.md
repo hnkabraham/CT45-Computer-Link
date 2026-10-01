@@ -2,6 +2,16 @@
 
 Status on September 30, 2026: **development candidate; full physical-device acceptance remains incomplete**. The stable public download is still version 2.0.0.
 
+## September 30 main-branch hardware follow-up
+
+PR #1 was merged into `main` at the owner's request. The latest signed 2.1.0 APK was installed as an update on the reconnected physical CT45P, retaining the existing test pairing and prior scan history. It established the pinned TLS Bluetooth connection in about four seconds and reconnected after a planned Mac helper restart in about ten seconds. Three synthetic barcode records were received exactly once through Bluetooth, and the handheld showed the latest acknowledgement. The compact view and settings opened on the physical device; delivery feedback remained off by default.
+
+The subsequent two-minute connection check completed with 24 connected samples and zero unexpected disconnects. The temporary server and helper exited normally; the CT45 was returned to its Home screen with background scanning off.
+
+The pending overnight settings cleanup is complete: Wi-Fi is on and background scanning is off, with no scanning service left running. The requested stay-awake-while-charging preference had reset to off; it was restored to `7` and verified with `mStayOn=true`. PIN protection was preserved and the screen was not deliberately put to sleep. The overnight automation remains paused.
+
+This short follow-up does not complete the six-hour acceptance target or verify optical trigger scanning, screen-off behavior, sound/vibration, or silent/Do Not Disturb behavior. No stable release was published.
+
 ## September 30 final UX refinements
 
 The newest build adds an actionable empty search view, explanations for disabled session selection, route-specific connection help with settings shortcuts, a manual retry that preserves pairing and Bluetooth registration limits, a compact scanning view, and optional delivery feedback. The background notification no longer promises screen-lock behavior.
@@ -12,7 +22,7 @@ The newest build adds an actionable empty search view, explanations for disabled
 - Android debug/release builds and lint passed with zero errors and seven existing warnings. The release APK was signed with the existing key lineage and signature/alignment verification passed.
 - Both Mac DMGs and the Windows x64 installer built. Packaged runtime and Bluetooth checks were not repeated for this refinement; the earlier results below remain separate evidence.
 
-Physical testing is deferred at the owner’s request. In particular, sound, vibration, silent/Do Not Disturb behavior, and the new controls still need checking on the CT45. Emulated UI checks cannot establish those hardware behaviors. The overnight automation remains paused, the stable release remains 2.0.0, and no physical device settings were changed for these refinements.
+Physical testing was initially deferred at the owner’s request; the limited follow-up above was completed after the CT45 was reconnected. Sound, vibration, silent/Do Not Disturb behavior, and broader checks of the new controls still need verification on the CT45. Emulated UI checks cannot establish those hardware behaviors. The overnight automation remains paused and the stable release remains 2.0.0.
 
 ## Earlier September 30 product and design improvements (9e8a65d)
 
@@ -31,7 +41,7 @@ That commit added local queue actions, guided connection recovery, handheld sess
 
 Those Android workflows were exercised on a disposable Android 13 emulator against the production desktop TLS server. A saved 70,000-character entry was rejected locally and the following valid scan delivered. New 8,193-character input was rejected without disconnecting. A 101-character device name connected with a bounded hello name. Session selection changed the desktop session; waiting scans retained their original session. Confirmed local discard survived restart and prevented retry of that record. A pairing without Bluetooth offered a working network switch, and reselecting the active transport preserved the connection.
 
-The emulator's barcode input is synthetic. Neither that APK nor the latest refinement has been installed or tested on the physical CT45, and the updated Intel packages have not been rerun under Rosetta. The historical radio evidence below applies to the earlier Bluetooth build. The overnight automation remains paused. Screenshots and reproducible test commands are in the [gallery](images/v2.1/README.md) and [README](../README.md).
+The emulator's barcode input is synthetic. At that validation point, the APK had not been installed or tested on the physical CT45; see the later limited hardware follow-up above. The updated Intel packages have not been rerun under Rosetta. The historical radio evidence below applies to the earlier Bluetooth build. The overnight automation remains paused. Screenshots and reproducible test commands are in the [gallery](images/v2.1/README.md) and [README](../README.md).
 
 ## Earlier Bluetooth build and hardware tests
 
@@ -58,11 +68,11 @@ After the user unlocked the CT45, **Stay awake while charging** was enabled at t
 
 The soak sent a synthetic barcode every two minutes through the production app and real Bluetooth radio. Every 15 cycles it restarted the Mac helper and queued a scan while disconnected. The last successful delivery was at 4:06 AM Pacific. At 4:08 AM, the ADB command for cycle 164 failed because the device was no longer available, before that scan could be injected. No Bluetooth delivery timeout was recorded before this test-control failure; the cause of the device disappearing is not established.
 
-Independent inspection of the persisted desktop log found 201 records with 201 unique IDs: 38 functional-test scans and all 163 soak scans in an uninterrupted sequence. The single repeated delivery was the deliberately lost acknowledgement in the functional suite, correctly deduplicated in storage. The runner and its Mac sleep-prevention process exited. Cleanup could not restore the temporary CT45 Wi-Fi/background settings because ADB remained unavailable; reconnecting the device is required to finish cleanup. The requested stay-awake-while-charging preference must remain enabled. Test reports and persisted records remain in a private local directory.
+Independent inspection of the persisted desktop log found 201 records with 201 unique IDs: 38 functional-test scans and all 163 soak scans in an uninterrupted sequence. The single repeated delivery was the deliberately lost acknowledgement in the functional suite, correctly deduplicated in storage. The runner and its Mac sleep-prevention process exited. Cleanup initially could not restore the temporary CT45 Wi-Fi/background settings because ADB remained unavailable; that cleanup was completed during the later main-branch follow-up above. The requested stay-awake-while-charging preference remains enabled. Test reports and persisted records remain in a private local directory.
 
 Still required before calling the Bluetooth release fully validated:
 
-- Restore temporary device test settings when ADB returns and complete an uninterrupted soak before claiming the six-hour check passed.
+- Complete an uninterrupted soak before claiming the six-hour check passed.
 - Manually scan an optical barcode using the Honeywell hardware trigger; synthetic broadcasts do not test the camera/laser or firmware trigger behavior.
 - Verify screen-off scanning when the owner can unlock the device again; Home-screen background checks do not establish screen-off behavior.
 - Verify the updated queue/session controls and keyboard behavior on the physical CT45, including returning to the app without the soft keyboard covering the scan history.
