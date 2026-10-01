@@ -73,6 +73,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // The XML attribute requires API 31; the View property also works on Android 8–11.
+        findViewById<View>(R.id.app_logo).clipToOutline = true
         page = savedInstanceState?.getString("page")?.takeIf { it in setOf("scan", "history", "settings") } ?: "scan"
         manualExpanded = savedInstanceState?.getBoolean("manualExpanded") ?: false
         recent = findViewById(R.id.recent)

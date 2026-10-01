@@ -1,6 +1,16 @@
 # Version 2.1 validation
 
-Status on September 30, 2026: **development candidate; full physical-device acceptance remains incomplete**. The stable public download is still version 2.0.0.
+Status on October 1, 2026: **development candidate; full physical-device acceptance remains incomplete**. The stable public download is still version 2.0.0.
+
+## October 1 logo and scanner update
+
+The [Clear logo](branding/README.md) is now used by the Android adaptive launcher, Android header, desktop header/window, and desktop installers. The original generated image and exact final prompt are committed alongside the resized production assets. The Android launcher includes an 11dp inset to keep the white mark inside its safe circle. Header clipping uses the View property so it also works before Android 12.
+
+Android debug/release builds and lint passed with zero errors and seven existing warnings; release signature and alignment verification passed. The signed APK was installed over the existing app on the CT45P. Its installed APK hash matched the local signed build, the installation identity was retained, and the existing scan count, session and pairing display were unchanged. The new header was visually inspected on the CT45; the launcher mask and the 720×1280 layout at 130% text size were inspected on a disposable Android 13 emulator.
+
+Both Mac installers and the Windows x64 installer were rebuilt with the logo. The packaged Apple silicon Mac app passed all 51 non-radio UI checks; the packaged Intel Mac app also passed all 51 under Rosetta. Desktop gallery screenshots were refreshed from the Apple silicon package. Windows runtime, native Intel radio hardware, and the Bluetooth/optical acceptance checks were not rerun for this branding update.
+
+The CT45 was returned to Home with Wi-Fi and Bluetooth on and background scanning off. Its charging stay-awake setting had returned to `0` before the update; the user's requested `7` setting was restored once. PIN protection and management policies were unchanged. Private device snapshots and installation verification remain outside the repository; no stable release was published.
 
 ## September 30 Clear interface
 

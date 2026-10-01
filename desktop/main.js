@@ -173,6 +173,7 @@ function createWindow() {
     minWidth: 420,
     minHeight: 480,
     title: 'CT45 Computer Link',
+    icon: path.join(here, 'ui', 'logo.png'),
     backgroundColor: '#f5f6f8',
     show: false,
     webPreferences: {

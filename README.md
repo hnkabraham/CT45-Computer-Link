@@ -1,3 +1,5 @@
+<img src="docs/branding/ct45-logo.png" alt="CT45 Computer Link logo" width="88">
+
 # CT45 Computer Link
 
 Scan a barcode on a Honeywell CT45 and send it to your Mac or Windows computer. Keep a searchable scan log, organize work into named sessions, export to Excel, or type each scan into another app.
@@ -11,6 +13,8 @@ It also adds handheld session selection, copying and locally discarding waiting 
 The development apps use the **Clear** interface: calm teal accents, more readable scan history, and separate workspaces. Android has **Scan**, **History**, and **Settings** navigation. Scan shows the latest barcode and three recent entries; History opens the complete retained log. **Enter barcode** opens manual entry when needed. Settings holds background scanning and delivery feedback. The connection card still offers connection choices, help, and retry. On desktop, **Scans** holds the session and export controls, **Sessions** lets you view or resume a job, and **Settings** holds scanner pairing and keyboard output.
 
 [View the Clear desktop and Android UI screenshots](docs/images/clear/README.md).
+
+[Logo artwork and generation prompt](docs/branding/README.md).
 
 ![Clear development interface with named scanning session](docs/images/clear/ct45-desktop-sessions.png)
 

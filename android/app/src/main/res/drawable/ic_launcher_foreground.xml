@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A barcode with a scan line, centred in the adaptive-icon safe zone. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M34,38h3v32h-3z M39,38h1.5v32h-1.5z M43,38h4v32h-4z M49,38h1.5v32h-1.5z M53,38h2.5v32h-2.5z M58,38h1.5v32h-1.5z M62,38h4v32h-4z M68,38h1.5v32h-1.5z M71.5,38h2.5v32h-2.5z" />
-    <path android:fillColor="#FF5A4F"
-        android:pathData="M30,52.75h48v2.5h-48z" />
-</vector>
+<!-- An 11dp inset keeps the complete symbol inside the 66dp adaptive-icon safe circle. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="11dp">
+    <bitmap android:src="@drawable/clear_logo" android:gravity="fill" />
+</inset>
